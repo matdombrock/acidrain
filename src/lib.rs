@@ -271,9 +271,23 @@ impl Pos {
         Pos { x, y }
     }
     fn distance(&self, other: &Pos) -> f32 {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
+        let dx = self.x as i32 - other.x as i32;
+        let dy = self.y as i32 - other.y as i32;
         ((dx * dx + dy * dy) as f32).sqrt()
+    }
+    fn clamp_to_world(&mut self) {
+        if self.x < 0 {
+            self.x = 0;
+        }
+        if self.x >= WORLD_SIZE as i16 {
+            self.x = (WORLD_SIZE - 1) as i16;
+        }
+        if self.y < 0 {
+            self.y = 0;
+        }
+        if self.y >= WORLD_SIZE as i16 {
+            self.y = (WORLD_SIZE - 1) as i16;
+        }
     }
 }
 
@@ -284,7 +298,7 @@ enum Screen {
     GameOver,
 }
 
-struct State {
+struct GameMaster {
     rng: Rng,
     seed: u64,
     frame: u32,
@@ -296,12 +310,17 @@ struct State {
     gold_locs: Vec<Pos>,
     gold_rained: usize,
     gold: usize,
-    rain_locs: Vec<Pos>,
+    // Dificulty
+    drone_count: usize,
+    fly_count: usize,
+    slider_count: usize,
     rain_chance_rte: u8,
     rain_amount_rte: u8,
+    //
+    rain_locs: Vec<Pos>,
     drone_locs: Vec<Pos>,
-    fly_locs: [Pos; 8],
-    slider_locs: [Pos; 8],
+    fly_locs: Vec<Pos>,
+    slider_locs: Vec<Pos>,
     player_flags_last: u32,
     dmg_frames: u8,
     has_drilled: bool,
@@ -309,7 +328,40 @@ struct State {
     is_drilling: bool,
     screen: Screen,
 }
-impl State {
+static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
+    rng: Rng::new(),
+    seed: 0,
+    frame: 0,
+    hp: 10,
+    pos: Pos { x: 76, y: 0 },
+    dir: 0,
+    world: MiniBitVec {
+        data: Vec::new(),
+        len: 0,
+    },
+    exit_loc: Pos { x: 0, y: 0 },
+    gold_locs: Vec::new(),
+    gold_rained: 0,
+    gold: 0,
+    // Difficulty
+    drone_count: 0,
+    fly_count: 0,
+    slider_count: 1,
+    rain_chance_rte: 100,
+    rain_amount_rte: 200,
+    //
+    rain_locs: Vec::new(),
+    drone_locs: Vec::new(),
+    fly_locs: Vec::new(),
+    slider_locs: Vec::new(),
+    player_flags_last: BLIT_1BPP,
+    dmg_frames: 0,
+    has_drilled: false,
+    has_gold: false,
+    is_drilling: false,
+    screen: Screen::Start,
+});
+impl GameMaster {
     fn world_get(&self, x: usize, y: usize) -> Option<bool> {
         let index = y * WORLD_SIZE + x;
         self.world.get(index)
@@ -317,6 +369,17 @@ impl State {
     fn world_set(&mut self, x: usize, y: usize, value: bool) {
         let index = y * WORLD_SIZE + x;
         self.world.set(index, value);
+    }
+    fn world_set_area(&mut self, x: usize, y: usize, w: usize, h: usize, value: bool) {
+        for dy in 0..h {
+            for dx in 0..w {
+                let wx = x + dx;
+                let wy = y + dy;
+                if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                    self.world_set(wx, wy, value);
+                }
+            }
+        }
     }
     unsafe fn player_collide(&mut self, cache: Pos) -> bool {
         // Collision with world
@@ -360,356 +423,384 @@ impl State {
             self.clear_at_player();
         }
     }
+
     #[allow(static_mut_refs)]
     unsafe fn reset(&mut self, full: bool) {
         // Reset game state
-        ST.frame = 0;
-        ST.pos = Pos { x: 76, y: 0 };
-        ST.world = MiniBitVec::new();
-        ST.exit_loc = Pos { x: 0, y: 0 };
-        ST.gold_locs.clear();
-        ST.gold_rained = 0;
-        ST.rain_locs.clear();
-        ST.player_flags_last = BLIT_1BPP;
-        ST.dmg_frames = 0;
-        ST.has_gold = false;
-        ST.is_drilling = false;
-        ST.screen = Screen::Start;
-        ST.dir = 0;
-        ST.drone_locs.clear();
+        self.frame = 0;
+        self.pos = Pos { x: 76, y: 0 };
+        self.world = MiniBitVec::new();
+        self.exit_loc = Pos { x: 0, y: 0 };
+        self.gold_locs.clear();
+        self.gold_rained = 0;
+        self.rain_locs.clear();
+        self.player_flags_last = BLIT_1BPP;
+        self.dmg_frames = 0;
+        self.has_gold = false;
+        self.is_drilling = false;
+        self.screen = Screen::Start;
+        self.dir = 0;
+        self.drone_locs.clear();
+        self.fly_locs.clear();
+        self.slider_locs.clear();
         if full {
-            ST.gold = 0;
-            ST.hp = 10;
-            ST.seed = 0;
-            ST.has_drilled = false;
+            self.gold = 0;
+            self.hp = 10;
+            self.seed = 0;
+            self.has_drilled = false;
         }
     }
-}
 
-static mut ST: LazyLock<State> = LazyLock::new(|| State {
-    rng: Rng::new(),
-    seed: 0,
-    frame: 0,
-    hp: 10,
-    pos: Pos { x: 76, y: 0 },
-    dir: 0,
-    world: MiniBitVec {
-        data: Vec::new(),
-        len: 0,
-    },
-    exit_loc: Pos { x: 0, y: 0 },
-    gold_locs: Vec::new(),
-    gold_rained: 0,
-    gold: 0,
-    rain_locs: Vec::new(),
-    rain_chance_rte: 100,
-    rain_amount_rte: 200,
-    drone_locs: Vec::new(),
-    fly_locs: [Pos { x: 0, y: 0 }; 8],
-    slider_locs: [Pos { x: 0, y: 0 }; 8],
-    player_flags_last: BLIT_1BPP,
-    dmg_frames: 0,
-    has_drilled: false,
-    has_gold: false,
-    is_drilling: false,
-    screen: Screen::Start,
-});
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_dig(&mut self) {
+        let max = 440 - self.pos.y as u32 * 2; // 160
+        let f = self.rng.u32(120..max);
+        tone(f, 0, 50, TONE_NOISE);
+    }
 
-#[allow(static_mut_refs)]
-unsafe fn sfx_dig() {
-    let max = 440 - ST.pos.y as u32 * 2; // 160
-    let f = ST.rng.u32(120..max);
-    tone(f, 0, 50, TONE_NOISE);
-}
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_rain(&mut self, p: &Pos) {
+        let f = self.rng.u32(440..880);
+        let dist = p.distance(&self.pos) as u32;
+        let vol = 5 + (if dist > 50 { 20 } else { 50 - dist });
+        tone(f, 0, vol, TONE_PULSE2);
+    }
 
-#[allow(static_mut_refs)]
-unsafe fn sfx_rain(p: &Pos) {
-    let f = ST.rng.u32(440..880);
-    let dist = ((ST.pos.x - p.x).abs() + (ST.pos.y - p.y).abs()) as u32;
-    let vol = 5 + (if dist > 50 { 20 } else { 50 - dist });
-    tone(f, 0, vol, TONE_PULSE2);
-}
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_gold(&mut self) {
+        let f = self.rng.u32(400..440);
+        tone(f, 4, 128, TONE_PULSE1);
+    }
 
-#[allow(static_mut_refs)]
-unsafe fn sfx_gold() {
-    let f = ST.rng.u32(400..440);
-    tone(f, 4, 128, TONE_PULSE1);
-}
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_dmg(&mut self) {
+        let f = self.rng.u32(200..220);
+        tone(f, 4, 128, TONE_PULSE1);
+    }
 
-#[allow(static_mut_refs)]
-unsafe fn sfx_dmg() {
-    let f = ST.rng.u32(200..220);
-    tone(f, 4, 128, TONE_PULSE1);
-}
-
-#[no_mangle]
-#[allow(static_mut_refs)]
-unsafe fn start() {
-    *PALETTE = PAL;
-    ST.world = MiniBitVec::new();
-}
-
-#[no_mangle]
-#[allow(static_mut_refs)]
-unsafe fn gen_world() {
-    for y in 0..WORLD_SIZE {
-        for _ in 0..WORLD_SIZE {
-            let mut alive = y >= 24;
-            if ST.rng.i32(0..100) < 2 {
-                alive = false;
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn gen_world(&mut self) {
+        for y in 0..WORLD_SIZE {
+            for _ in 0..WORLD_SIZE {
+                let mut alive = y >= 24;
+                if self.rng.i32(0..100) < 2 {
+                    alive = false;
+                }
+                self.world.push(alive);
             }
-            ST.world.push(alive);
+        }
+        // Generate some random gold locations
+        for _ in 0..GOLD_COUNT {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(24..(WORLD_SIZE as i16));
+            self.gold_locs.push(Pos::new(x, y));
+        }
+        // Exit location
+        let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
+        self.exit_loc = Pos::new(exit_x, 152);
+        // Fly locations
+        for _ in 0..self.fly_count {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(24..(WORLD_SIZE as i16));
+            self.fly_locs.push(Pos::new(x, y));
+        }
+        // Slider locations
+        for _ in 0..self.slider_count {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(24..(WORLD_SIZE as i16));
+            self.slider_locs.push(Pos::new(x, y));
         }
     }
-    // Generate some random gold locations
-    for _ in 0..GOLD_COUNT {
-        let x = ST.rng.i16(0..(WORLD_SIZE as i16));
-        let y = ST.rng.i16(24..(WORLD_SIZE as i16));
-        ST.gold_locs.push(Pos::new(x, y));
-    }
-    // Exit location
-    let exit_x = ST.rng.i16(0..(WORLD_SIZE as i16));
-    ST.exit_loc = Pos::new(exit_x, 152);
-    // Fly locations
-    for fly in &mut ST.fly_locs {
-        let x = ST.rng.i16(0..(WORLD_SIZE as i16));
-        let y = ST.rng.i16(24..(WORLD_SIZE as i16));
-        *fly = Pos::new(x, y);
-    }
-    // Slider locations
-    for slider in &mut ST.slider_locs {
-        let x = ST.rng.i16(0..(WORLD_SIZE as i16));
-        let y = ST.rng.i16(24..(WORLD_SIZE as i16));
-        *slider = Pos::new(x, y);
-    }
-}
 
-#[no_mangle]
-#[allow(static_mut_refs)]
-unsafe fn main_logic() {
-    let pos_cache = ST.pos;
-    ST.is_drilling = false;
-    ST.dir = 0;
-    let gamepad = *GAMEPAD1;
-    if gamepad & BUTTON_1 != 0 {
-        ST.is_drilling = true;
-    }
-    if gamepad & BUTTON_LEFT != 0 {
-        ST.pos.x -= 1;
-        ST.dir = 1;
-    }
-    if gamepad & BUTTON_RIGHT != 0 {
-        ST.pos.x += 1;
-        ST.dir = 2;
-    }
-    if ST.is_drilling && (gamepad & BUTTON_DOWN != 0) {
-        ST.has_drilled = true;
-        ST.dir = 3;
-        // Remove the 4 blocks under the smiley
-        for dy in 0..1 {
-            for dx in 0..(PLAYER_SIZE + 2) as i16 {
-                let wx = (ST.pos.x + dx - 1) as usize;
-                let wy = (ST.pos.y + dy + PLAYER_SIZE as i16) as usize;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    if ST.rng.i32(0..100) < 50 {
-                        ST.world_set(wx, wy, false);
-                        sfx_dig();
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn handle_input(&mut self) {
+        let pos_cache = self.pos;
+        self.is_drilling = false;
+        self.dir = 0;
+        let gamepad = *GAMEPAD1;
+        if gamepad & BUTTON_1 != 0 {
+            self.is_drilling = true;
+        }
+        if gamepad & BUTTON_LEFT != 0 {
+            self.pos.x -= 1;
+            self.dir = 1;
+        }
+        if gamepad & BUTTON_RIGHT != 0 {
+            self.pos.x += 1;
+            self.dir = 2;
+        }
+        if self.is_drilling && (gamepad & BUTTON_DOWN != 0) {
+            self.has_drilled = true;
+            self.dir = 3;
+            // Remove the 4 blocks under the smiley
+            for dy in 0..1 {
+                for dx in 0..(PLAYER_SIZE + 2) as i16 {
+                    let wx = (self.pos.x + dx - 1) as usize;
+                    let wy = (self.pos.y + dy + PLAYER_SIZE as i16) as usize;
+                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                        if self.rng.i32(0..100) < 50 {
+                            self.world_set(wx, wy, false);
+                            self.sfx_dig();
+                        }
                     }
                 }
             }
         }
-    }
 
-    if ST.is_drilling && (gamepad & BUTTON_RIGHT != 0) {
-        ST.has_drilled = true;
-        // Remove the 4 blocks to the right of the smiley
-        for dy in 0..(PLAYER_SIZE + 1) as i16 {
-            for dx in 0..1 {
-                let wx = (ST.pos.x - 1 + dx + PLAYER_SIZE as i16) as usize;
-                let wy = (ST.pos.y + dy - 1) as usize;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    if ST.rng.i32(0..100) < 50 {
-                        ST.world_set(wx, wy, false);
-                        sfx_dig();
+        if self.is_drilling && (gamepad & BUTTON_RIGHT != 0) {
+            self.has_drilled = true;
+            // Remove the 4 blocks to the right of the smiley
+            for dy in 0..(PLAYER_SIZE + 1) as i16 {
+                for dx in 0..1 {
+                    let wx = (self.pos.x - 1 + dx + PLAYER_SIZE as i16) as usize;
+                    let wy = (self.pos.y + dy - 1) as usize;
+                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                        if self.rng.i32(0..100) < 50 {
+                            self.world_set(wx, wy, false);
+                            self.sfx_dig();
+                        }
                     }
                 }
             }
         }
-    }
-    if ST.is_drilling && (gamepad & BUTTON_LEFT != 0) {
-        ST.has_drilled = true;
-        // Remove the 4 blocks to the left of the smiley
-        for dy in 0..(PLAYER_SIZE + 1) as i16 {
-            for dx in 0..1 {
-                let wx = (ST.pos.x - dx) as usize;
-                let wy = (ST.pos.y + dy - 1) as usize;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    if ST.rng.i32(0..100) < 50 {
-                        ST.world_set(wx, wy, false);
-                        sfx_dig();
+        if self.is_drilling && (gamepad & BUTTON_LEFT != 0) {
+            self.has_drilled = true;
+            // Remove the 4 blocks to the left of the smiley
+            for dy in 0..(PLAYER_SIZE + 1) as i16 {
+                for dx in 0..1 {
+                    let wx = (self.pos.x - dx) as usize;
+                    let wy = (self.pos.y + dy - 1) as usize;
+                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                        if self.rng.i32(0..100) < 50 {
+                            self.world_set(wx, wy, false);
+                            self.sfx_dig();
+                        }
                     }
                 }
             }
         }
-    }
-    ST.player_collide(pos_cache);
-    let pos_cache = ST.pos;
-    ST.pos.y += 1;
-    if ST.pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
-        ST.pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
-    }
-    ST.player_collide(pos_cache);
-    ST.player_wrap();
-
-    // Check for gold collection
-    ST.gold_locs.retain(|gold| {
-        let collected = ST.pos.x < gold.x + 4
-            && ST.pos.x + PLAYER_SIZE as i16 > gold.x
-            && ST.pos.y < gold.y + 4
-            && ST.pos.y + PLAYER_SIZE as i16 > gold.y;
-        if collected {
-            sfx_gold();
-            ST.gold += 1;
-            false
-        } else {
-            true
+        self.player_collide(pos_cache);
+        let pos_cache = self.pos;
+        self.pos.y += 1;
+        if self.pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
+            self.pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
         }
-    });
-
-    // Add drones
-    if ST.frame % 200 == 0 && ST.drone_locs.len() < 5 {
-        let x = ST.rng.i16(0..(WORLD_SIZE as i16));
-        ST.drone_locs.push(Pos::new(x, 0));
+        self.player_collide(pos_cache);
+        self.player_wrap();
     }
-    // Update drones
-    // Move towards player
-    if ST.frame % 16 == 0 {
-        for drone in &mut ST.drone_locs {
-            let dx = ST.pos.x - drone.x;
-            let dy = ST.pos.y - drone.y;
-            let dist = ((dx * dx + dy * dy) as f32).sqrt();
-            if dist > 0.0 {
-                let step_x = (dx as f32 / dist).round() as i16;
-                let step_y = (dy as f32 / dist).round() as i16;
-                drone.x += step_x;
-                drone.y += step_y;
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn player_collisions(&mut self) {
+        // Check for gold collection
+        self.gold_locs.retain(|gold| {
+            let collected = GM.pos.x < gold.x + 4
+                && GM.pos.x + PLAYER_SIZE as i16 > gold.x
+                && GM.pos.y < gold.y + 4
+                && GM.pos.y + PLAYER_SIZE as i16 > gold.y;
+            if collected {
+                GM.sfx_gold();
+                GM.gold += 1;
+                false
+            } else {
+                true
             }
-            // Check for collision with player
+        });
+        // Check for collisions with doors
+        let door_collide = self.pos.x < self.exit_loc.x + 8
+            && self.pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
+            && self.pos.y < self.exit_loc.y + 8
+            && self.pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
+        if door_collide {
+            // Win the game (reset for now)
+            self.reset(false);
+            return;
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn update_rain(&mut self) {
+        // Add rain
+        let mut rain_chance = self.frame / self.rain_chance_rte as u32;
+        if rain_chance > 100 {
+            rain_chance = 100;
+        }
+        let mut rain_amount = self.frame / self.rain_amount_rte as u32;
+        if rain_amount > 10 {
+            rain_amount = 10;
+        }
+        if self.rain_locs.len() < RAIN_MAX {
+            for _ in 0..rain_amount {
+                if self.rng.i32(0..100) < rain_chance as i32 {
+                    let x = self.rng.i16(0..(WORLD_SIZE as i16));
+                    self.rain_locs.push(Pos::new(x, 0));
+                }
+            }
+        }
+        // Update rain
+        for rain in &mut self.rain_locs {
+            rain.y += 1;
+        }
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, rain) in self.rain_locs.iter().enumerate() {
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = ST.pos.x + px;
-                    let py_pos = ST.pos.y + py;
-                    if px_pos == drone.x && py_pos == drone.y {
-                        sfx_dmg();
-                    }
-                }
-            }
-            // Remove world blocks at drone position
-            for dy in 0..4 {
-                for dx in 0..6 {
-                    let wx = (drone.x + dx) as usize;
-                    let wy = (drone.y + dy) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        ST.world_set(wx, wy, false);
+                    let px_pos = self.pos.x + px;
+                    let py_pos = self.pos.y + py;
+                    if px_pos == rain.x && py_pos == rain.y {
+                        hits_player.push(i);
                     }
                 }
             }
         }
-    }
-
-    // Add rain
-    let mut rain_chance = ST.frame / ST.rain_chance_rte as u32;
-    if rain_chance > 100 {
-        rain_chance = 100;
-    }
-    let mut rain_amount = ST.frame / ST.rain_amount_rte as u32;
-    if rain_amount > 10 {
-        rain_amount = 10;
-    }
-    if ST.rain_locs.len() < RAIN_MAX {
-        for _ in 0..rain_amount {
-            if ST.rng.i32(0..100) < rain_chance as i32 {
-                let x = ST.rng.i16(0..(WORLD_SIZE as i16));
-                ST.rain_locs.push(Pos::new(x, 0));
-            }
+        for &i in hits_player.iter().rev() {
+            self.rain_locs.remove(i);
+            self.dmg_frames = DMG_FRAMES;
+            self.hp = self.hp.saturating_sub(1);
+            self.sfx_dmg();
         }
-    }
-    // Update rain
-    for rain in &mut ST.rain_locs {
-        rain.y += 1;
-    }
-    // Remove rain that is out of bounds or hit the ground
-    let mut rain_hits = Vec::new();
-    ST.rain_locs.retain(|rain| {
-        if rain.y >= WORLD_SIZE as i16 {
-            return false;
-        }
-        let wx = rain.x as usize;
-        let wy = rain.y as usize;
-        if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            if let Some(cell) = ST.world_get(wx, wy) {
-                if cell {
-                    rain_hits.push(Pos::new(wx as i16, wy as i16));
-                    sfx_rain(rain);
-                    return false;
-                }
-            }
-            // Check for player collision
-            for dy in 0..PLAYER_SIZE as i16 {
-                for dx in 0..PLAYER_SIZE as i16 {
-                    let px = ST.pos.x + dx;
-                    let py = ST.pos.y + dy;
-                    if px == rain.x && py == rain.y {
-                        rain_hits.push(Pos::new(wx as i16, wy as i16));
-                        ST.dmg_frames = DMG_FRAMES;
-                        ST.hp = ST.hp.saturating_sub(1);
-                        sfx_dmg();
-                        return false;
+        // Check for collision with world
+        let mut hits_world: Vec<usize> = Vec::new();
+        for (i, rain) in self.rain_locs.iter().enumerate() {
+            let wx = rain.x as usize;
+            let wy = rain.y as usize;
+            if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                if let Some(cell) = self.world_get(wx, wy) {
+                    if cell {
+                        hits_world.push(i);
                     }
                 }
             }
-            // Remove gold if hit
-            ST.gold_locs.retain(|gold| {
+        }
+        for &i in hits_world.iter().rev() {
+            self.world_set(
+                self.rain_locs[i].x as usize,
+                self.rain_locs[i].y as usize,
+                false,
+            );
+            let rain = self.rain_locs[i].clone();
+            self.sfx_rain(&rain);
+            self.rain_locs.remove(i);
+        }
+        // Check for collision with gold
+        let mut hits_gold: Vec<usize> = Vec::new();
+        for (i, rain) in self.rain_locs.iter().enumerate() {
+            let wx = rain.x as usize;
+            let wy = rain.y as usize;
+            self.gold_locs.retain(|gold| {
                 let hit = gold.x >= wx as i16
                     && gold.x < (wx + 4) as i16
                     && gold.y >= wy as i16
                     && gold.y < (wy + 4) as i16;
                 if hit {
                     tone(280, 1, 100, TONE_PULSE2);
-                    ST.gold_rained += 1;
-                    // Remove a chunk of world where gold was
-                    for gy in 0..8 {
-                        for gx in 0..8 {
-                            let gwx = (gold.x + gx) as usize;
-                            let gwy = (gold.y + gy) as usize;
-                            if gwx < WORLD_SIZE && gwy < WORLD_SIZE {
-                                ST.world_set(gwx, gwy, false);
-                            }
-                        }
-                    }
+                    self.gold_rained += 1;
+                    hits_gold.push(i);
                 }
                 !hit
             });
         }
-        true
-    });
-    // Create small holes where rain hits
-    for hit in rain_hits {
-        for dy in 0..2 {
-            for dx in 0..2 {
-                let wx = (hit.x + dx) as usize;
-                let wy = (hit.y + dy) as usize;
+        for &i in hits_gold.iter().rev() {
+            self.gold_locs.retain(|gold| {
+                let wx = self.rain_locs[i].x as usize;
+                let wy = self.rain_locs[i].y as usize;
+                let hit = gold.x >= wx as i16
+                    && gold.x < (wx + 4) as i16
+                    && gold.y >= wy as i16
+                    && gold.y < (wy + 4) as i16;
+                !hit
+            });
+            // Remove a chunk of world where gold was
+            self.world_set_area(
+                self.rain_locs[i].x as usize,
+                self.rain_locs[i].y as usize,
+                8,
+                8,
+                false,
+            );
+            self.rain_locs.remove(i);
+        }
+        // Check out of bounds rain
+        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn update_drones(&mut self) {
+        // Add drones
+        if self.frame % 200 == 0 && self.drone_locs.len() < self.drone_count {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            self.drone_locs.push(Pos::new(x, 0));
+        }
+        // Update drones
+        if self.frame % 16 != 0 {
+            return;
+        }
+        // Move towards player
+        let mut trigger_sfx = false;
+        let mut clear_locs: Vec<Pos> = Vec::new();
+        for drone in &mut self.drone_locs {
+            let dx = self.pos.x - drone.x;
+            let dy = self.pos.y - drone.y;
+            let dist = self.pos.distance(drone);
+            if dist > 1.0 {
+                let step_x = (dx as f32 / dist).round() as i16;
+                let step_y = (dy as f32 / dist).round() as i16;
+                drone.x += step_x;
+                drone.y += step_y;
+                drone.clamp_to_world();
+            }
+            // Check for collision with player
+            for py in 0..PLAYER_SIZE as i16 {
+                for px in 0..PLAYER_SIZE as i16 {
+                    let px_pos = self.pos.x + px;
+                    let py_pos = self.pos.y + py;
+                    if px_pos == drone.x && py_pos == drone.y {
+                        trigger_sfx = true;
+                    }
+                }
+            }
+            // Remove world blocks at drone position
+            // TODO: Cant use self.world_set here as it would borrow self mutably
+            // This should be changed to use a list of positions to clear after the loop
+            for dy in 0..4 {
+                for dx in 0..6 {
+                    let wx = (drone.x + dx) as usize;
+                    let wy = (drone.y + dy) as usize;
+                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                        clear_locs.push(Pos::new(wx as i16, wy as i16));
+                    }
+                }
+            }
+        }
+        if trigger_sfx {
+            self.sfx_dmg();
+        }
+        // Clear world blocks
+        for loc in clear_locs {
+            if loc.x >= 0 && loc.y >= 0 {
+                let wx = loc.x as usize;
+                let wy = loc.y as usize;
                 if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    ST.world_set(wx, wy, false);
+                    self.world_set(wx, wy, false);
                 }
             }
         }
     }
-
-    // Update fly location
-    if ST.frame % 8 == 0 {
-        for fly in &mut ST.fly_locs {
-            let dir = ST.rng.i32(0..4);
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn update_flies(&mut self) {
+        // Update fly location
+        if self.frame % 8 != 0 {
+            return;
+        }
+        // Move randomly
+        for fly in &mut self.fly_locs {
+            let dir = self.rng.i32(0..4);
             match dir {
                 0 => {
                     fly.x += 1;
@@ -737,33 +828,67 @@ unsafe fn main_logic() {
                 }
                 _ => {}
             }
-            // Check for collision with player
+            fly.clamp_to_world();
+        }
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, fly) in self.fly_locs.iter().enumerate() {
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = ST.pos.x + px;
-                    let py_pos = ST.pos.y + py;
+                    let px_pos = self.pos.x + px;
+                    let py_pos = self.pos.y + py;
                     if px_pos == fly.x && py_pos == fly.y {
-                        sfx_dmg();
-                    }
-                }
-            }
-            // Destroy world blocks at fly position
-            for dy in 0..4 {
-                for dx in 0..4 {
-                    let wx = (fly.x + dx) as usize;
-                    let wy = (fly.y + dy) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        ST.world_set(wx, wy, false);
+                        hits_player.push(i);
                     }
                 }
             }
         }
+        for &i in hits_player.iter().rev() {
+            self.fly_locs.remove(i);
+            self.dmg_frames = DMG_FRAMES;
+            self.hp = self.hp.saturating_sub(1);
+            self.sfx_dmg();
+        }
+        // Check for collision with world
+        let mut hits_world: Vec<usize> = Vec::new();
+        for (i, fly) in self.fly_locs.iter().enumerate() {
+            let wx = fly.x as usize;
+            let wy = fly.y as usize;
+            if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                if let Some(cell) = self.world_get(wx, wy) {
+                    if cell {
+                        hits_world.push(i);
+                    }
+                }
+            }
+        }
+        for &i in hits_world.iter().rev() {
+            let fly = self.fly_locs[i].clone();
+            self.world_set_area(fly.x as usize, fly.y as usize, 8, 4, false);
+            // for dy in 0..4 {
+            //     for dx in 0..8 {
+            //         let wx = (fly.x + dx) as usize;
+            //         let wy = (fly.y + dy) as usize;
+            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
+            //             self.world_set(wx, wy, false);
+            //         }
+            //     }
+            // }
+            self.sfx_rain(&fly);
+            // self.fly_locs.remove(i);
+        }
     }
 
-    // Sliders move left and right only
-    if ST.frame % 8 == 0 {
-        for slider in &mut ST.slider_locs {
-            let dir = ST.rng.i32(0..2);
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn update_sliders(&mut self) {
+        // Sliders move left and right only
+        if self.frame % 8 != 0 {
+            return;
+        }
+        // Move randomly
+        for slider in &mut self.slider_locs {
+            let dir = self.rng.i32(0..2);
             match dir {
                 0 => {
                     slider.x += 4;
@@ -779,345 +904,380 @@ unsafe fn main_logic() {
                 }
                 _ => {}
             }
-            // Check for collision with player
+        }
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, slider) in self.slider_locs.iter().enumerate() {
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = ST.pos.x + px;
-                    let py_pos = ST.pos.y + py;
+                    let px_pos = self.pos.x + px;
+                    let py_pos = self.pos.y + py;
                     if px_pos == slider.x && py_pos == slider.y {
-                        sfx_dmg();
-                    }
-                }
-            }
-            // Destroy world blocks at slider position
-            for dy in 0..4 {
-                for dx in 0..6 {
-                    let wx = (slider.x + dx) as usize;
-                    let wy = (slider.y + dy) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        ST.world_set(wx, wy, false);
+                        hits_player.push(i);
                     }
                 }
             }
         }
+        for &i in hits_player.iter().rev() {
+            self.slider_locs.remove(i);
+            self.dmg_frames = DMG_FRAMES;
+            self.hp = self.hp.saturating_sub(1);
+            self.sfx_dmg();
+        }
+        // Check for collision with world
+        let mut hits_world: Vec<usize> = Vec::new();
+        for (i, slider) in self.slider_locs.iter().enumerate() {
+            let wx = slider.x as usize;
+            let wy = slider.y as usize;
+            if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                if let Some(cell) = self.world_get(wx, wy) {
+                    if cell {
+                        hits_world.push(i);
+                    }
+                }
+            }
+        }
+        for &i in hits_world.iter().rev() {
+            let slider = self.slider_locs[i].clone();
+            self.world_set_area(slider.x as usize, slider.y as usize, 8, 4, false);
+            self.sfx_rain(&slider);
+            // self.slider_locs.remove(i);
+        }
     }
 
-    // Check for collisions with doors
-    let door_collide = ST.pos.x < ST.exit_loc.x + 8
-        && ST.pos.x + PLAYER_SIZE as i16 > ST.exit_loc.x
-        && ST.pos.y < ST.exit_loc.y + 8
-        && ST.pos.y + PLAYER_SIZE as i16 > ST.exit_loc.y;
-    if door_collide {
-        // Win the game (reset for now)
-        ST.reset(false);
-        return;
-    }
-
-    // If world blocks have less than 4 neighbors, they fall down
-    let mut to_fall = Vec::new();
-    for y in (1..WORLD_SIZE - 1).rev() {
-        for x in 1..WORLD_SIZE - 1 {
-            if let Some(cell) = ST.world_get(x, y) {
-                if cell {
-                    let mut neighbors = 0;
-                    for oy in -1..=1 {
-                        for ox in -1..=1 {
-                            if ox == 0 && oy == 0 {
-                                continue;
-                            }
-                            if let Some(ncell) =
-                                ST.world_get((x as i32 + ox) as usize, (y as i32 + oy) as usize)
-                            {
-                                if ncell {
-                                    neighbors += 1;
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    // TODO: This should be optimized to not check every block every frame
+    // Could just check all blocks every few frames
+    unsafe fn update_world(&mut self) {
+        // If world blocks have less than 4 neighbors, they fall down
+        let mut to_fall = Vec::new();
+        for y in (1..WORLD_SIZE - 1).rev() {
+            for x in 1..WORLD_SIZE - 1 {
+                if let Some(cell) = self.world_get(x, y) {
+                    if cell {
+                        let mut neighbors = 0;
+                        for oy in -1..=1 {
+                            for ox in -1..=1 {
+                                if ox == 0 && oy == 0 {
+                                    continue;
+                                }
+                                if let Some(ncell) = self
+                                    .world_get((x as i32 + ox) as usize, (y as i32 + oy) as usize)
+                                {
+                                    if ncell {
+                                        neighbors += 1;
+                                    }
                                 }
                             }
                         }
-                    }
-                    if neighbors < 4 {
-                        to_fall.push((x, y));
+                        if neighbors < 4 {
+                            to_fall.push((x, y));
+                        }
                     }
                 }
             }
         }
-    }
-    for (x, y) in to_fall {
-        if ST.frame % 6 == 0 {
-            // Check for collision below
-            if let Some(below) = ST.world_get(x, y + 1) {
-                if !below {
-                    // Check for player collision
-                    let mut collide_with_player = false;
-                    for dy in 0..PLAYER_SIZE as i16 {
-                        for dx in 0..PLAYER_SIZE as i16 {
-                            let px = ST.pos.x + dx;
-                            let py = ST.pos.y + dy;
-                            if px == x as i16 && py == (y as i16 + 1) {
-                                collide_with_player = true;
+        for (x, y) in to_fall {
+            if self.frame % 6 == 0 {
+                // Check for collision below
+                if let Some(below) = self.world_get(x, y + 1) {
+                    if !below {
+                        // Check for player collision
+                        let mut collide_with_player = false;
+                        for dy in 0..PLAYER_SIZE as i16 {
+                            for dx in 0..PLAYER_SIZE as i16 {
+                                let px = self.pos.x + dx;
+                                let py = self.pos.y + dy;
+                                if px == x as i16 && py == (y as i16 + 1) {
+                                    collide_with_player = true;
+                                }
                             }
                         }
-                    }
-                    if !collide_with_player {
-                        ST.world_set(x, y, false);
-                        ST.world_set(x, y + 1, true);
+                        if !collide_with_player {
+                            self.world_set(x, y, false);
+                            self.world_set(x, y + 1, true);
+                        }
                     }
                 }
             }
         }
     }
 
-    // If took damage, change palette briefly
-    if ST.dmg_frames > 0 {
-        *PALETTE = PAL_DMG;
-        ST.dmg_frames -= 1;
-    } else {
-        *PALETTE = PAL;
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn main_logic(&mut self) {
+        self.handle_input();
+        self.player_collisions();
+
+        self.update_rain();
+        self.update_drones();
+        self.update_flies();
+        self.update_sliders();
+        self.update_world();
+
+        // Check for game over
+        if self.hp == 0 {
+            // self.screen = Screen::GameOver;
+        }
     }
-    // Check for game over
-    if ST.hp == 0 {
-        ST.screen = Screen::GameOver;
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render(&mut self) {
+        // If took damage, change palette briefly
+        if GM.dmg_frames > 0 {
+            *PALETTE = PAL_DMG;
+            GM.dmg_frames -= 1;
+        } else {
+            *PALETTE = PAL;
+        }
+        // Render the world
+        for y in 0..WORLD_SIZE {
+            for x in 0..WORLD_SIZE {
+                if let Some(cell) = GM.world_get(x, y) {
+                    if cell {
+                        *DRAW_COLORS = 2;
+                        rect(x as i32, y as i32, 1, 1);
+                    }
+                }
+            }
+        }
+        *DRAW_COLORS = 4;
+
+        // Render player
+        let player_flags = match GM.dir {
+            0 => GM.player_flags_last,
+            1 => BLIT_1BPP | BLIT_FLIP_X,
+            2 => BLIT_1BPP,
+            _ => GM.player_flags_last,
+        };
+        GM.player_flags_last = player_flags;
+        let player_frame = (GM.frame / 10) % 3;
+        let mut player_sprite = match player_frame {
+            0 => &SMILEY1,
+            1 => &SMILEY2,
+            2 => &SMILEY3,
+            _ => &SMILEY1,
+        };
+        if GM.dir == 0 {
+            player_sprite = &SMILEY1;
+        }
+        blit(
+            player_sprite,
+            GM.pos.x as i32,
+            GM.pos.y as i32,
+            8,
+            PLAYER_SIZE as u32,
+            player_flags,
+        );
+
+        // Render drill
+        let drill_off = match GM.dir {
+            0 => Pos::new(PLAYER_SIZE as i16, 0),
+            1 => Pos::new(-(PLAYER_SIZE as i16), 0),
+            2 => Pos::new(PLAYER_SIZE as i16, 0),
+            3 => Pos::new(0, PLAYER_SIZE as i16),
+            _ => Pos::new(PLAYER_SIZE as i16, 0),
+        };
+        let drill_flags = match GM.dir {
+            0 => BLIT_1BPP,
+            1 => BLIT_1BPP | BLIT_FLIP_X,
+            2 => BLIT_1BPP,
+            3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
+            _ => BLIT_1BPP,
+        };
+        let drill_show = match GM.dir {
+            0 => false,
+            1 => true,
+            2 => true,
+            3 => true,
+            _ => false,
+        };
+        if drill_show && GM.is_drilling {
+            let drill_frame = (GM.frame / 5) % 2;
+            let drill_sprite = if drill_frame == 0 { &DRILL } else { &DRILL2 };
+            blit(
+                drill_sprite,
+                (GM.pos.x + drill_off.x) as i32,
+                (GM.pos.y + drill_off.y) as i32,
+                8,
+                PLAYER_SIZE as u32,
+                drill_flags,
+            );
+        }
+
+        // Render gold locations
+        let gold_frame = (GM.frame / 15) % 2;
+        let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
+        for gold in &GM.gold_locs {
+            *DRAW_COLORS = 3;
+            // rect(gold.x as i32, gold.y as i32, 2, 2);
+            blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
+        }
+
+        // Render exit
+        let door_frame = (GM.frame / 20) % 2;
+        let door_sprite = if door_frame == 0 { &DOOR1 } else { &DOOR2 };
+        *DRAW_COLORS = 1;
+        rect(GM.exit_loc.x as i32, GM.exit_loc.y as i32, 8, 8);
+        *DRAW_COLORS = 3;
+        blit(
+            door_sprite,
+            GM.exit_loc.x as i32,
+            GM.exit_loc.y as i32,
+            8,
+            8,
+            BLIT_1BPP,
+        );
+
+        // Render rain
+        for rain in &GM.rain_locs {
+            *DRAW_COLORS = 4;
+            rect(rain.x as i32, rain.y as i32, 1, 1);
+        }
+        // Render drones
+        let drone_frame = (GM.frame / 10) % 2;
+        let drone_sprite = if drone_frame == 0 { &DRONE1 } else { &DRONE2 };
+        for drone in &GM.drone_locs {
+            *DRAW_COLORS = 4;
+            // rect(drone.x as i32, drone.y as i32, 6, 4);
+            blit(
+                drone_sprite,
+                drone.x as i32,
+                drone.y as i32,
+                8,
+                8,
+                BLIT_1BPP,
+            );
+        }
+
+        // Render flies
+        let fly_frame = (GM.frame / 10) % 2;
+        let fly_sprite = if fly_frame == 0 { &FLY1 } else { &FLY2 };
+        for fly in &GM.fly_locs {
+            *DRAW_COLORS = 4;
+            // rect(fly.x as i32, fly.y as i32, 4, 4);
+            blit(fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
+        }
+
+        // Render sliders
+        let slider_frame = (GM.frame / 10) % 2;
+        let slider_sprite = if slider_frame == 0 {
+            &SLIDER1
+        } else {
+            &SLIDER2
+        };
+        for slider in &GM.slider_locs {
+            *DRAW_COLORS = 4;
+            // rect(slider.x as i32, slider.y as i32, 6, 4);
+            blit(
+                slider_sprite,
+                slider.x as i32,
+                slider.y as i32,
+                8,
+                8,
+                BLIT_1BPP,
+            );
+        }
+
+        // Highlight the top layer of blocks
+        // TODO: This is probablly slow
+        // Really only want to highlight visible to sky
+        for x in 0..WORLD_SIZE {
+            for y in 0..WORLD_SIZE {
+                if let Some(cell) = GM.world_get(x, y) {
+                    if cell {
+                        // Check if block above is empty
+                        if y == 0 || GM.world_get(x, y - 1) == Some(false) {
+                            *DRAW_COLORS = 3;
+                            rect(x as i32, y as i32, 1, 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Help text
+        if GM.has_drilled == false {
+            *DRAW_COLORS = 1;
+            rect(45, 45, 75, 16);
+            *DRAW_COLORS = 4;
+            let help_text = "X TO DIG";
+            text(help_text, 50, 50);
+        }
+
+        // Health
+        for i in 0..GM.hp {
+            *DRAW_COLORS = 3;
+            // rect(45 + i as i32 * 6, 4, 4, 4);
+            blit(&HEART, 55 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
+        }
+        // Gold collected
+        text(GM.gold.to_string(), 4, 2);
+
+        // Start screen
+        if GM.screen == Screen::Start {
+            *DRAW_COLORS = 1;
+            rect(0, 0, 160, 160);
+            *DRAW_COLORS = 4;
+            let title_text = "ACID\nRAIN";
+            let instr_text = "PRESS\nX\nBUTTON";
+            *DRAW_COLORS = 3;
+            text(title_text, 45, 60);
+            *DRAW_COLORS = 4;
+            text(title_text, 45, 61);
+            *DRAW_COLORS = 2;
+            text(instr_text, 45, 80);
+        }
+        // Game over screen
+        if GM.screen == Screen::GameOver {
+            *DRAW_COLORS = 1;
+            // rect(0, 0, 160, 160);
+            *DRAW_COLORS = 4;
+            let over_text = "GAME OVER";
+            *DRAW_COLORS = 3;
+            text(over_text, 45, 60);
+            *DRAW_COLORS = 4;
+            text(over_text, 46, 61);
+            *DRAW_COLORS = 2;
+            text(GM.gold.to_string(), 10, 80);
+        }
+
+        // Debug
+        // text(ST.rain_locs.len().to_string(), 120, 2);
+        // text(ST.hp.to_string(), 120, 8);
+        // line(80, 0, ST.pos.x as i32 + 4, ST.pos.y as i32);
     }
+}
+
+#[no_mangle]
+#[allow(static_mut_refs)]
+unsafe fn start() {
+    *PALETTE = PAL;
+    GM.world = MiniBitVec::new();
 }
 
 #[no_mangle]
 #[allow(static_mut_refs)]
 unsafe fn update() {
     // UPDATE
-    if ST.screen == Screen::Start {
+    if GM.screen == Screen::Start {
         let gamepad = *GAMEPAD1;
         if gamepad != 0 {
-            ST.screen = Screen::Game;
+            GM.screen = Screen::Game;
             // Seed random with current frame
-            ST.rng = Rng::with_seed(ST.seed);
-            gen_world();
+            GM.rng = Rng::with_seed(GM.seed);
+            GM.gen_world();
         }
-        ST.seed += 1;
-    } else if ST.screen == Screen::Game {
-        main_logic();
-        ST.frame += 1;
-    } else if ST.screen == Screen::GameOver {
+        GM.seed += 1;
+    } else if GM.screen == Screen::Game {
+        GM.main_logic();
+        GM.frame += 1;
+    } else if GM.screen == Screen::GameOver {
         *PALETTE = PAL_GAMEOVER;
-        let gamepad = *GAMEPAD1;
-        // if gamepad != 0 {
-        // }
     }
 
     // DRAW
-
-    // Render the world
-    for y in 0..WORLD_SIZE {
-        for x in 0..WORLD_SIZE {
-            if let Some(cell) = ST.world_get(x, y) {
-                if cell {
-                    *DRAW_COLORS = 2;
-                    rect(x as i32, y as i32, 1, 1);
-                }
-            }
-        }
-    }
-    *DRAW_COLORS = 4;
-
-    // Render player
-    let player_flags = match ST.dir {
-        0 => ST.player_flags_last,
-        1 => BLIT_1BPP | BLIT_FLIP_X,
-        2 => BLIT_1BPP,
-        _ => ST.player_flags_last,
-    };
-    ST.player_flags_last = player_flags;
-    let player_frame = (ST.frame / 10) % 3;
-    let mut player_sprite = match player_frame {
-        0 => &SMILEY1,
-        1 => &SMILEY2,
-        2 => &SMILEY3,
-        _ => &SMILEY1,
-    };
-    if ST.dir == 0 {
-        player_sprite = &SMILEY1;
-    }
-    blit(
-        player_sprite,
-        ST.pos.x as i32,
-        ST.pos.y as i32,
-        8,
-        PLAYER_SIZE as u32,
-        player_flags,
-    );
-
-    // Render drill
-    let drill_off = match ST.dir {
-        0 => Pos::new(PLAYER_SIZE as i16, 0),
-        1 => Pos::new(-(PLAYER_SIZE as i16), 0),
-        2 => Pos::new(PLAYER_SIZE as i16, 0),
-        3 => Pos::new(0, PLAYER_SIZE as i16),
-        _ => Pos::new(PLAYER_SIZE as i16, 0),
-    };
-    let drill_flags = match ST.dir {
-        0 => BLIT_1BPP,
-        1 => BLIT_1BPP | BLIT_FLIP_X,
-        2 => BLIT_1BPP,
-        3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
-        _ => BLIT_1BPP,
-    };
-    let drill_show = match ST.dir {
-        0 => false,
-        1 => true,
-        2 => true,
-        3 => true,
-        _ => false,
-    };
-    if drill_show && ST.is_drilling {
-        let drill_frame = (ST.frame / 5) % 2;
-        let drill_sprite = if drill_frame == 0 { &DRILL } else { &DRILL2 };
-        blit(
-            drill_sprite,
-            (ST.pos.x + drill_off.x) as i32,
-            (ST.pos.y + drill_off.y) as i32,
-            8,
-            PLAYER_SIZE as u32,
-            drill_flags,
-        );
-    }
-
-    // Render gold locations
-    let gold_frame = (ST.frame / 15) % 2;
-    let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
-    for gold in &ST.gold_locs {
-        *DRAW_COLORS = 3;
-        // rect(gold.x as i32, gold.y as i32, 2, 2);
-        blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
-    }
-
-    // Render exit
-    let door_frame = (ST.frame / 20) % 2;
-    let door_sprite = if door_frame == 0 { &DOOR1 } else { &DOOR2 };
-    *DRAW_COLORS = 1;
-    rect(ST.exit_loc.x as i32, ST.exit_loc.y as i32, 8, 8);
-    *DRAW_COLORS = 3;
-    blit(
-        door_sprite,
-        ST.exit_loc.x as i32,
-        ST.exit_loc.y as i32,
-        8,
-        8,
-        BLIT_1BPP,
-    );
-
-    // Render rain
-    for rain in &ST.rain_locs {
-        *DRAW_COLORS = 4;
-        rect(rain.x as i32, rain.y as i32, 1, 1);
-    }
-    // Render drones
-    let drone_frame = (ST.frame / 10) % 2;
-    let drone_sprite = if drone_frame == 0 { &DRONE1 } else { &DRONE2 };
-    for drone in &ST.drone_locs {
-        *DRAW_COLORS = 4;
-        // rect(drone.x as i32, drone.y as i32, 6, 4);
-        blit(
-            drone_sprite,
-            drone.x as i32,
-            drone.y as i32,
-            8,
-            8,
-            BLIT_1BPP,
-        );
-    }
-
-    // Render flies
-    let fly_frame = (ST.frame / 10) % 2;
-    let fly_sprite = if fly_frame == 0 { &FLY1 } else { &FLY2 };
-    for fly in &ST.fly_locs {
-        *DRAW_COLORS = 4;
-        // rect(fly.x as i32, fly.y as i32, 4, 4);
-        blit(fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
-    }
-
-    // Render sliders
-    let slider_frame = (ST.frame / 10) % 2;
-    let slider_sprite = if slider_frame == 0 {
-        &SLIDER1
-    } else {
-        &SLIDER2
-    };
-    for slider in &ST.slider_locs {
-        *DRAW_COLORS = 4;
-        // rect(slider.x as i32, slider.y as i32, 6, 4);
-        blit(
-            slider_sprite,
-            slider.x as i32,
-            slider.y as i32,
-            8,
-            8,
-            BLIT_1BPP,
-        );
-    }
-
-    // Highlight the top layer of blocks
-    // TODO: This is probablly slow
-    // Really only want to highlight visible to sky
-    for x in 0..WORLD_SIZE {
-        for y in 0..WORLD_SIZE {
-            if let Some(cell) = ST.world_get(x, y) {
-                if cell {
-                    // Check if block above is empty
-                    if y == 0 || ST.world_get(x, y - 1) == Some(false) {
-                        *DRAW_COLORS = 3;
-                        rect(x as i32, y as i32, 1, 1);
-                    }
-                }
-            }
-        }
-    }
-
-    // Help text
-    if ST.has_drilled == false {
-        *DRAW_COLORS = 1;
-        rect(45, 45, 75, 16);
-        *DRAW_COLORS = 4;
-        let help_text = "X TO DIG";
-        text(help_text, 50, 50);
-    }
-
-    // Health
-    for i in 0..ST.hp {
-        *DRAW_COLORS = 3;
-        // rect(45 + i as i32 * 6, 4, 4, 4);
-        blit(&HEART, 55 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
-    }
-    // Gold collected
-    text(ST.gold.to_string(), 4, 2);
-
-    // Start screen
-    if ST.screen == Screen::Start {
-        *DRAW_COLORS = 1;
-        rect(0, 0, 160, 160);
-        *DRAW_COLORS = 4;
-        let title_text = "ACID\nRAIN";
-        let instr_text = "PRESS\nX\nBUTTON";
-        *DRAW_COLORS = 3;
-        text(title_text, 45, 60);
-        *DRAW_COLORS = 4;
-        text(title_text, 45, 61);
-        *DRAW_COLORS = 2;
-        text(instr_text, 45, 80);
-    }
-    // Game over screen
-    if ST.screen == Screen::GameOver {
-        *DRAW_COLORS = 1;
-        // rect(0, 0, 160, 160);
-        *DRAW_COLORS = 4;
-        let over_text = "GAME OVER";
-        *DRAW_COLORS = 3;
-        text(over_text, 45, 60);
-        *DRAW_COLORS = 4;
-        text(over_text, 46, 61);
-        *DRAW_COLORS = 2;
-        text(ST.gold.to_string(), 10, 80);
-    }
-
-    // Debug
-    // text(ST.rain_locs.len().to_string(), 120, 2);
-    // text(ST.hp.to_string(), 120, 8);
-    // line(80, 0, ST.pos.x as i32 + 4, ST.pos.y as i32);
+    GM.render();
 }
