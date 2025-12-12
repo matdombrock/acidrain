@@ -228,6 +228,7 @@ static PAL_DMG: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static PAL_GAMEOVER: [u32; 4] = [0x551110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
+static MAX_LVL: usize = 8;
 
 pub struct MiniBitVec {
     data: Vec<u8>,
@@ -324,11 +325,102 @@ enum Screen {
     Transition,
 }
 
+#[derive(Copy, Clone)]
+struct DifficultySettings {
+    drone_limit: usize,
+    fly_limit: usize,
+    slider_limit: usize,
+    drone_rte: u16,
+    rain_chance_rte: u8,
+    rain_amount_rte: u8,
+}
+impl DifficultySettings {
+    fn new() -> Self {
+        Self {
+            drone_limit: 0,
+            fly_limit: 0,
+            slider_limit: 0,
+            drone_rte: 100,
+            rain_chance_rte: 100,
+            rain_amount_rte: 200,
+        }
+    }
+}
+
+const DIFF_LVLS: [DifficultySettings; MAX_LVL] = [
+    // Zero is not used
+    DifficultySettings {
+        drone_limit: 0,
+        fly_limit: 0,
+        slider_limit: 0,
+        drone_rte: 100,
+        rain_chance_rte: 100,
+        rain_amount_rte: 200,
+    },
+    // This is the first real level
+    DifficultySettings {
+        drone_limit: 0,
+        fly_limit: 0,
+        slider_limit: 0,
+        drone_rte: 100,
+        rain_chance_rte: 100,
+        rain_amount_rte: 200,
+    },
+    DifficultySettings {
+        drone_limit: 0,
+        fly_limit: 3,
+        slider_limit: 0,
+        drone_rte: 250,
+        rain_chance_rte: 100,
+        rain_amount_rte: 200,
+    },
+    DifficultySettings {
+        drone_limit: 3,
+        fly_limit: 4,
+        slider_limit: 3,
+        drone_rte: 200,
+        rain_chance_rte: 80,
+        rain_amount_rte: 160,
+    },
+    DifficultySettings {
+        drone_limit: 4,
+        fly_limit: 5,
+        slider_limit: 4,
+        drone_rte: 150,
+        rain_chance_rte: 70,
+        rain_amount_rte: 140,
+    },
+    DifficultySettings {
+        drone_limit: 5,
+        fly_limit: 6,
+        slider_limit: 5,
+        drone_rte: 120,
+        rain_chance_rte: 60,
+        rain_amount_rte: 120,
+    },
+    DifficultySettings {
+        drone_limit: 6,
+        fly_limit: 7,
+        slider_limit: 6,
+        drone_rte: 100,
+        rain_chance_rte: 50,
+        rain_amount_rte: 100,
+    },
+    DifficultySettings {
+        drone_limit: 7,
+        fly_limit: 8,
+        slider_limit: 7,
+        drone_rte: 80,
+        rain_chance_rte: 40,
+        rain_amount_rte: 80,
+    },
+];
+
 struct GameMaster {
     rng: Rng,
     seed: u64,
     frame: u32,
-    lvl: u8,
+    lvl: usize,
     hp: u8,
     pos: Pos,
     dir: u8,
@@ -341,14 +433,7 @@ struct GameMaster {
     drill_heat_max: u16,
     drill_heat: u16,
     drill_overheat: bool,
-    // Dificulty
-    drone_limit: usize,
-    fly_limit: usize,
-    slider_limit: usize,
-    drone_rte: u16,      // Frames between drone spawns
-    rain_chance_rte: u8, // Rate of increase of rain chance
-    rain_amount_rte: u8, // Rate of increase of rain amount
-    //
+    diff: DifficultySettings,
     rain_locs: Vec<Pos>,
     drone_locs: Vec<Pos>,
     fly_locs: Vec<Pos>,
@@ -367,7 +452,7 @@ impl GameMaster {
             rng: Rng::new(),
             seed: 0,
             frame: 0,
-            lvl: 1,
+            lvl: 0,
             hp: 8,
             pos: Pos { x: 76, y: 0 },
             dir: 0,
@@ -383,14 +468,7 @@ impl GameMaster {
             drill_heat_max: 100,
             drill_heat: 0,
             drill_overheat: false,
-            // Difficulty
-            drone_limit: 5,
-            fly_limit: 5,
-            slider_limit: 5,
-            drone_rte: 200,
-            rain_chance_rte: 100,
-            rain_amount_rte: 200,
-            //
+            diff: DifficultySettings::new(),
             rain_locs: Vec::new(),
             drone_locs: Vec::new(),
             fly_locs: Vec::new(),
@@ -601,13 +679,13 @@ impl GameMaster {
         let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
         self.exit_loc = Pos::new(exit_x, 152);
         // Fly locations
-        for _ in 0..self.fly_limit {
+        for _ in 0..self.diff.fly_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(24..(WORLD_SIZE as i16));
             self.fly_locs.push(Pos::new(x, y));
         }
         // Slider locations
-        for _ in 0..self.slider_limit {
+        for _ in 0..self.diff.slider_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(24..(WORLD_SIZE as i16));
             self.slider_locs.push(Pos::new(x, y));
@@ -737,11 +815,11 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn update_rain(&mut self) {
         // Add rain
-        let mut rain_chance = self.frame / self.rain_chance_rte as u32;
+        let mut rain_chance = self.frame / self.diff.rain_chance_rte as u32;
         if rain_chance > 100 {
             rain_chance = 100;
         }
-        let mut rain_amount = self.frame / self.rain_amount_rte as u32;
+        let mut rain_amount = self.frame / self.diff.rain_amount_rte as u32;
         if rain_amount > 10 {
             rain_amount = 10;
         }
@@ -845,7 +923,9 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn update_drones(&mut self) {
         // Add drones
-        if self.frame % self.drone_rte as u32 == 0 && self.drone_locs.len() < self.drone_limit {
+        if self.frame % self.diff.drone_rte as u32 == 0
+            && self.drone_locs.len() < self.diff.drone_limit
+        {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             self.drone_locs.push(Pos::new(x, 0));
         }
@@ -1466,10 +1546,9 @@ unsafe fn update() {
     if GM.screen == Screen::Start {
         GM.seed += 1; // Increment seed while on start screen
         if GM.input_check_any() {
-            GM.screen = Screen::Game;
             // Seed random with current frame
             GM.rng = Rng::with_seed(GM.seed);
-            GM.gen_world();
+            GM.screen = Screen::Transition;
         }
     } else if GM.screen == Screen::Game {
         GM.main_logic();
@@ -1479,13 +1558,17 @@ unsafe fn update() {
     } else if GM.screen == Screen::Shop {
         if GM.input_check_any() {
             GM.no_input_frames = NO_INPUT_FRAMES;
+            GM.lvl += 1;
+            if GM.lvl > MAX_LVL {
+                GM.lvl = 1;
+            }
             GM.screen = Screen::Transition;
         }
         GM.frame += 1;
     } else if GM.screen == Screen::Transition {
         if GM.input_check_any() {
-            GM.lvl += 1;
             GM.world_reset(false);
+            GM.diff = DIFF_LVLS[GM.lvl];
             GM.gen_world();
             GM.screen = Screen::Game;
         }
