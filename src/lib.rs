@@ -297,6 +297,7 @@ enum Screen {
     Start,
     Game,
     GameOver,
+    Transition,
 }
 
 struct GameMaster {
@@ -366,7 +367,7 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     has_drilled: false,
     has_gold: false,
     is_drilling: false,
-    screen: Screen::Start,
+    screen: Screen::Transition,
 });
 impl GameMaster {
     unsafe fn input_check(&mut self, check: u8) -> bool {
@@ -466,11 +467,13 @@ impl GameMaster {
     }
 
     #[allow(static_mut_refs)]
+    // TODO: This is a little hacky
+    // It should just use new and cache saved values
     unsafe fn reset(&mut self, full: bool) {
         // Block input for N frames
         self.no_input_frames = 120;
+        self.screen = Screen::Transition;
         // Reset game state
-        self.screen = Screen::Start;
         self.frame = 0;
         self.pos = Pos { x: 76, y: 0 };
         self.world = MiniBitVec::new();
@@ -487,6 +490,7 @@ impl GameMaster {
         self.fly_locs.clear();
         self.slider_locs.clear();
         if full {
+            self.screen = Screen::Start;
             self.gold = 0;
             self.hp = 10;
             self.seed = 0;
@@ -524,6 +528,7 @@ impl GameMaster {
     #[no_mangle]
     #[allow(static_mut_refs)]
     unsafe fn gen_world(&mut self) {
+        self.world = MiniBitVec::new();
         for y in 0..WORLD_SIZE {
             for _ in 0..WORLD_SIZE {
                 let mut alive = y >= 24;
@@ -558,7 +563,7 @@ impl GameMaster {
 
     #[no_mangle]
     #[allow(static_mut_refs)]
-    unsafe fn handle_input(&mut self) {
+    unsafe fn input_main(&mut self) {
         let pos_cache = self.pos;
         self.is_drilling = false;
         self.dir = 0;
@@ -1080,7 +1085,7 @@ impl GameMaster {
     #[no_mangle]
     #[allow(static_mut_refs)]
     unsafe fn main_logic(&mut self) {
-        self.handle_input();
+        self.input_main();
         self.player_collisions();
 
         self.update_rain();
@@ -1316,6 +1321,20 @@ impl GameMaster {
             *DRAW_COLORS = 2;
             text(GM.gold.to_string(), 10, 80);
         }
+        // Transition screen
+        if GM.screen == Screen::Transition {
+            *DRAW_COLORS = 1;
+            rect(0, 0, 160, 160);
+            *DRAW_COLORS = 4;
+            rect(0, 0, 160, 30);
+            *DRAW_COLORS = 1;
+            text("LEVEL UP!", 45, 12);
+            *DRAW_COLORS = 4;
+            text("BUY UPGRADES:", 30, 40);
+            *DRAW_COLORS = 3;
+            text("HEART PIECE", 30, 60);
+            text("DRILL SPEED", 30, 80);
+        }
 
         // Debug
         if DEBUG {
@@ -1365,6 +1384,11 @@ unsafe fn update() {
         GM.frame += 1;
     } else if GM.screen == Screen::GameOver {
         *PALETTE = PAL_GAMEOVER;
+    } else if GM.screen == Screen::Transition {
+        if GM.input_check_any() {
+            GM.screen = Screen::Game;
+            GM.gen_world();
+        }
     }
     GM.no_input_frames = GM.no_input_frames.saturating_sub(1);
 
