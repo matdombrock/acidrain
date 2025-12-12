@@ -102,7 +102,7 @@ const GOLD1: [u8; 8] = [
     0b00101111,
     0b01101111,
     0b10011111,
-    0b1111111,
+    0b11111111,
     0b11111111,
     0b11111111,
     0b11111111,
@@ -117,6 +117,28 @@ const GOLD2: [u8; 8] = [
     0b11111111,
     0b11111111,
     0b11111111,
+];
+#[rustfmt::skip]
+const GOLDLRG1: [u8; 8] = [
+    0b10000001,
+    0b01111110,
+    0b01001110,
+    0b01001110,
+    0b01111110,
+    0b01111110,
+    0b01111110,
+    0b10000001,
+];
+#[rustfmt::skip]
+const GOLDLRG2: [u8; 8] = [
+    0b10000001,
+    0b01111110,
+    0b01111110,
+    0b01111110,
+    0b01110010,
+    0b01110010,
+    0b01111110,
+    0b10000001,
 ];
 #[rustfmt::skip]
 const DRONE1: [u8; 8] = [
@@ -205,6 +227,7 @@ static PAL: [u32; 4] = [0x001110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static PAL_DMG: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static PAL_GAMEOVER: [u32; 4] = [0x551110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static DMG_FRAMES: u8 = 16;
+static NO_INPUT_FRAMES: u8 = 120;
 
 pub struct MiniBitVec {
     data: Vec<u8>,
@@ -297,6 +320,7 @@ enum Screen {
     Start,
     Game,
     GameOver,
+    Shop,
     Transition,
 }
 
@@ -304,6 +328,7 @@ struct GameMaster {
     rng: Rng,
     seed: u64,
     frame: u32,
+    lvl: u8,
     hp: u8,
     pos: Pos,
     dir: u8,
@@ -336,46 +361,49 @@ struct GameMaster {
     is_drilling: bool,
     screen: Screen,
 }
-static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
-    rng: Rng::new(),
-    seed: 0,
-    frame: 0,
-    hp: 8,
-    pos: Pos { x: 76, y: 0 },
-    dir: 0,
-    world: MiniBitVec {
-        data: Vec::new(),
-        len: 0,
-    },
-    drill_speed: 64,
-    exit_loc: Pos { x: 0, y: 0 },
-    gold_locs: Vec::new(),
-    gold_rained: 0,
-    gold: 0,
-    drill_heat_max: 100,
-    drill_heat: 0,
-    drill_overheat: false,
-    // Difficulty
-    drone_limit: 5,
-    fly_limit: 5,
-    slider_limit: 5,
-    drone_rte: 200,
-    rain_chance_rte: 100,
-    rain_amount_rte: 200,
-    //
-    rain_locs: Vec::new(),
-    drone_locs: Vec::new(),
-    fly_locs: Vec::new(),
-    slider_locs: Vec::new(),
-    player_flags_last: BLIT_1BPP,
-    dmg_frames: 0,
-    no_input_frames: 0,
-    has_drilled: false,
-    has_gold: false,
-    is_drilling: false,
-    screen: Screen::Start,
-});
 impl GameMaster {
+    fn new() -> Self {
+        Self {
+            rng: Rng::new(),
+            seed: 0,
+            frame: 0,
+            lvl: 1,
+            hp: 8,
+            pos: Pos { x: 76, y: 0 },
+            dir: 0,
+            world: MiniBitVec {
+                data: Vec::new(),
+                len: 0,
+            },
+            drill_speed: 64,
+            exit_loc: Pos { x: 0, y: 0 },
+            gold_locs: Vec::new(),
+            gold_rained: 0,
+            gold: 0,
+            drill_heat_max: 100,
+            drill_heat: 0,
+            drill_overheat: false,
+            // Difficulty
+            drone_limit: 5,
+            fly_limit: 5,
+            slider_limit: 5,
+            drone_rte: 200,
+            rain_chance_rte: 100,
+            rain_amount_rte: 200,
+            //
+            rain_locs: Vec::new(),
+            drone_locs: Vec::new(),
+            fly_locs: Vec::new(),
+            slider_locs: Vec::new(),
+            player_flags_last: BLIT_1BPP,
+            dmg_frames: 0,
+            no_input_frames: 0,
+            has_drilled: false,
+            has_gold: false,
+            is_drilling: false,
+            screen: Screen::Shop,
+        }
+    }
     unsafe fn input_check(&mut self, check: u8) -> bool {
         if self.no_input_frames > 0 {
             return false;
@@ -475,10 +503,10 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     // TODO: This is a little hacky
     // It should just use new and cache saved values
-    unsafe fn reset(&mut self, full: bool) {
+    unsafe fn world_reset(&mut self, full: bool) {
         // Block input for N frames
-        self.no_input_frames = 120;
-        self.screen = Screen::Transition;
+        self.no_input_frames = 0;
+        self.screen = Screen::Shop;
         // Reset game state
         self.frame = 0;
         self.pos = Pos { x: 76, y: 0 };
@@ -495,13 +523,27 @@ impl GameMaster {
         self.drone_locs.clear();
         self.fly_locs.clear();
         self.slider_locs.clear();
+        self.drill_heat = 0;
+        self.drill_overheat = false;
         if full {
+            // Unused and not up to date
             self.screen = Screen::Start;
             self.gold = 0;
             self.hp = 10;
             self.seed = 0;
             self.has_drilled = false;
+            self.drill_heat_max = 100;
         }
+    }
+
+    fn draw_gold(&mut self, x: i32, y: i32, amt: usize) {
+        let frame = (self.frame / 16) % 2;
+        if frame == 0 {
+            blit(&GOLDLRG1, x, y, 8, 8, BLIT_1BPP);
+        } else {
+            blit(&GOLDLRG2, x, y, 8, 8, BLIT_1BPP);
+        }
+        text(&format!("{}", amt), x + 10, y);
     }
 
     #[allow(static_mut_refs)]
@@ -529,6 +571,11 @@ impl GameMaster {
     unsafe fn sfx_dmg(&mut self) {
         let f = self.rng.u32(200..220);
         tone(f, 4, 128, TONE_PULSE1);
+    }
+
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_drill_overheat(&mut self) {
+        tone(150, 60, 128, TONE_NOISE);
     }
 
     #[no_mangle]
@@ -659,7 +706,8 @@ impl GameMaster {
             && self.pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
         if door_collide {
             // Win the game (reset for now)
-            self.reset(false);
+            self.screen = Screen::Shop;
+            self.no_input_frames = NO_INPUT_FRAMES;
             return;
         }
     }
@@ -677,6 +725,7 @@ impl GameMaster {
         }
         if self.drill_heat >= self.drill_heat_max {
             self.drill_overheat = true;
+            self.sfx_drill_overheat();
         }
         // Release overheat when cooled down
         if self.drill_heat == 0 {
@@ -1116,7 +1165,8 @@ impl GameMaster {
             blit(&HEART, 76 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
         }
         // Gold collected
-        text(GM.gold.to_string(), 4, 2);
+        // text(GM.gold.to_string(), 4, 2);
+        self.draw_gold(4, 2, GM.gold);
 
         // Heat bar
         *DRAW_COLORS = 2;
@@ -1296,7 +1346,7 @@ impl GameMaster {
         }
 
         // Help text
-        if GM.has_drilled == false {
+        if GM.has_drilled == false && GM.lvl == 1 {
             *DRAW_COLORS = 1;
             rect(45, 45, 75, 16);
             *DRAW_COLORS = 4;
@@ -1331,20 +1381,49 @@ impl GameMaster {
             *DRAW_COLORS = 2;
             text(GM.gold.to_string(), 10, 80);
         }
+        // Shop screen
+        if GM.screen == Screen::Shop {
+            *DRAW_COLORS = 1;
+            rect(0, 0, 160, 160);
+            *DRAW_COLORS = 3;
+            rect(0, 0, 160, 80);
+            *DRAW_COLORS = 1;
+            for x in 0..160 {
+                let sina = (GM.frame as f32 / 320.).sin() * 2.0;
+                let sin = ((GM.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
+                let y = (sin * 8.0 + 32.0) as i32;
+                rect(x as i32, y, 1, (160 - y) as u32);
+            }
+            *DRAW_COLORS = 1;
+            let sy = (self.frame as f32 / 8.).sin() * 2.0;
+            text("UPGRADES!", 50, 6 + sy as i32);
+            self.draw_gold(50, 14 + sy as i32, self.gold);
+            *DRAW_COLORS = 3;
+            vline(115, 45, 80);
+            // Up
+            text(b"\x86HEART PIECE", 12, 50);
+            self.draw_gold(120, 50, 8);
+            text(format!("{}/8", self.hp), 20, 60);
+            // Left
+            text(b"\x84DRILL SPEED", 12, 80);
+            self.draw_gold(120, 80, 32);
+            text(format!("{}/128", self.drill_speed), 20, 90);
+            // Righ
+            text(b"\x85DRILL COOLR", 12, 110);
+            self.draw_gold(120, 110, 32);
+            text(format!("{}/1024", self.drill_heat_max), 20, 120);
+            // Down
+            *DRAW_COLORS = 4;
+            hline(0, 135, 160);
+            text(b"\x87NEXT  LEVEL", 30, 145);
+        }
         // Transition screen
         if GM.screen == Screen::Transition {
             *DRAW_COLORS = 1;
             rect(0, 0, 160, 160);
             *DRAW_COLORS = 4;
-            rect(0, 0, 160, 30);
-            *DRAW_COLORS = 1;
-            text("LEVEL UP!", 45, 12);
-            *DRAW_COLORS = 4;
-            text("BUY UPGRADES:", 30, 40);
-            *DRAW_COLORS = 3;
-            text("HEART PIECE", 30, 60);
-            text("DRILL SPEED", 30, 70);
-            text("DRILL COOLR", 30, 80);
+            let trans_text = format!("LEVEL {}", self.lvl);
+            text(trans_text, 50, 60);
         }
 
         // Debug
@@ -1371,6 +1450,8 @@ impl GameMaster {
     }
 }
 
+static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster::new());
+
 #[no_mangle]
 #[allow(static_mut_refs)]
 unsafe fn start() {
@@ -1395,10 +1476,18 @@ unsafe fn update() {
         GM.frame += 1;
     } else if GM.screen == Screen::GameOver {
         *PALETTE = PAL_GAMEOVER;
+    } else if GM.screen == Screen::Shop {
+        if GM.input_check_any() {
+            GM.no_input_frames = NO_INPUT_FRAMES;
+            GM.screen = Screen::Transition;
+        }
+        GM.frame += 1;
     } else if GM.screen == Screen::Transition {
         if GM.input_check_any() {
-            GM.screen = Screen::Game;
+            GM.lvl += 1;
+            GM.world_reset(false);
             GM.gen_world();
+            GM.screen = Screen::Game;
         }
     }
     GM.no_input_frames = GM.no_input_frames.saturating_sub(1);
