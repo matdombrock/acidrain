@@ -422,6 +422,7 @@ enum Screen {
     Start,
     Game,
     GameOver,
+    GameEnd,
     Shop,
     Transition,
 }
@@ -467,26 +468,26 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         fly_limit: 0,
         slider_limit: 0,
         drone_rte: 100,
-        rain_chance_rte: 1000,
-        rain_amount_rte: 2000,
-        gold_amt: 16,
+        rain_chance_rte: 400,
+        rain_amount_rte: 600,
+        gold_amt: 8,
     },
     LVlSettings {
         drone_limit: 0,
         fly_limit: 3,
         slider_limit: 0,
         drone_rte: 250,
-        rain_chance_rte: 100,
-        rain_amount_rte: 200,
+        rain_chance_rte: 300,
+        rain_amount_rte: 300,
         gold_amt: 24,
     },
     LVlSettings {
-        drone_limit: 3,
+        drone_limit: 0,
         fly_limit: 4,
         slider_limit: 3,
         drone_rte: 200,
-        rain_chance_rte: 80,
-        rain_amount_rte: 160,
+        rain_chance_rte: 200,
+        rain_amount_rte: 300,
         gold_amt: 32,
     },
     LVlSettings {
@@ -494,7 +495,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         fly_limit: 5,
         slider_limit: 4,
         drone_rte: 150,
-        rain_chance_rte: 70,
+        rain_chance_rte: 100,
         rain_amount_rte: 140,
         gold_amt: 48,
     },
@@ -579,7 +580,7 @@ impl GameMaster {
             exit_loc: Pos { x: 0, y: 0 },
             gold_locs: Vec::new(),
             gold_rained: 0,
-            gold: 16,
+            gold: 0,
             drill_heat_max: 256,
             drill_heat: 0,
             drill_overheat: false,
@@ -595,9 +596,9 @@ impl GameMaster {
             has_gold: false,
             is_drilling: false,
             screen: Screen::Start,
-            cost_heart: 4,
-            cost_drill_speed: 8,
-            cost_drill_cool: 8,
+            cost_heart: 8,
+            cost_drill_speed: 16,
+            cost_drill_cool: 16,
             purchased: 0, // None, shop, drill speed, drill cool
         }
     }
@@ -626,6 +627,7 @@ impl GameMaster {
         if index >= self.world.len() {
             return;
         }
+
         self.world.set(index, value);
     }
     fn world_set_area(&mut self, x: usize, y: usize, w: usize, h: usize, value: bool) {
@@ -633,28 +635,33 @@ impl GameMaster {
             for dx in 0..w {
                 let wx = x + dx;
                 let wy = y + dy;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                if wx < WORLD_SIZE - 1 && wy < WORLD_SIZE - 1 {
                     self.world_set(wx, wy, value);
                 }
             }
         }
     }
     unsafe fn drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
+        // Prevent overflow and out-of-bounds
+        if x.checked_add(w).map_or(true, |end_x| end_x > WORLD_SIZE)
+            || y.checked_add(h).map_or(true, |end_y| end_y > WORLD_SIZE)
+        {
+            // Handle error or early return
+            return;
+        }
+
         for dy in 0..h {
             for dx in 0..w {
                 let wx = x + dx;
                 let wy = y + dy;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    // 128 = 100% chance
-                    if self.rng.i32(0..128) < chance as i32 {
-                        self.world_set(wx, wy, false);
-                        self.sfx_dig();
-                    }
+                if self.rng.i32(0..128) < chance as i32 {
+                    self.world_set(wx, wy, false);
+                    self.sfx_dig();
                 }
             }
         }
     }
-    unsafe fn player_collide(&mut self, cache: Pos) -> bool {
+    unsafe fn player_collide_world(&mut self, cache: Pos) -> bool {
         // Collision with world
         let mut collided = false;
         for dy in 0..PLAYER_SIZE {
@@ -675,6 +682,38 @@ impl GameMaster {
         }
         collided
     }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn player_collide_misc(&mut self) {
+        // Check for gold collection
+        self.gold_locs.retain(|gold| {
+            let collected = GM.pos.x < gold.x + 4
+                && GM.pos.x + PLAYER_SIZE as i16 > gold.x
+                && GM.pos.y < gold.y + 4
+                && GM.pos.y + PLAYER_SIZE as i16 > gold.y;
+            if collected {
+                GM.sfx_gold();
+                GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
+                GM.gold += 1;
+                false
+            } else {
+                true
+            }
+        });
+        // Check for collisions with doors
+        let door_collide = self.pos.x < self.exit_loc.x + 8
+            && self.pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
+            && self.pos.y < self.exit_loc.y + 8
+            && self.pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
+        if door_collide {
+            // Win the game (reset for now)
+            self.screen = Screen::Shop;
+            self.no_input_frames = NO_INPUT_FRAMES;
+            return;
+        }
+    }
+
     unsafe fn clear_at_player(&mut self) {
         for dy in 0..PLAYER_SIZE as i16 {
             for dx in 0..PLAYER_SIZE as i16 {
@@ -776,6 +815,11 @@ impl GameMaster {
     }
 
     #[allow(static_mut_refs)]
+    unsafe fn sfx_drill_warn(&mut self) {
+        tone(840, 1, 128, TONE_TRIANGLE);
+    }
+
+    #[allow(static_mut_refs)]
     unsafe fn sfx_buy(&mut self) {
         tone(600, 2, 128, TONE_TRIANGLE);
     }
@@ -807,6 +851,13 @@ impl GameMaster {
         // Exit location
         let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
         self.exit_loc = Pos::new(exit_x, 152);
+        self.world_set_area(
+            (self.exit_loc.x - 4) as usize,
+            (self.exit_loc.y - 2) as usize,
+            16,
+            12,
+            false,
+        );
         // Fly locations
         for _ in 0..self.diff.fly_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
@@ -879,44 +930,14 @@ impl GameMaster {
                 self.drill_speed,
             );
         }
-        self.player_collide(pos_cache);
+        self.player_collide_world(pos_cache);
         let pos_cache = self.pos;
         self.pos.y += 1;
         if self.pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
             self.pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
         }
-        self.player_collide(pos_cache);
+        self.player_collide_world(pos_cache);
         self.player_wrap();
-    }
-
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn player_collisions(&mut self) {
-        // Check for gold collection
-        self.gold_locs.retain(|gold| {
-            let collected = GM.pos.x < gold.x + 4
-                && GM.pos.x + PLAYER_SIZE as i16 > gold.x
-                && GM.pos.y < gold.y + 4
-                && GM.pos.y + PLAYER_SIZE as i16 > gold.y;
-            if collected {
-                GM.sfx_gold();
-                GM.gold += 1;
-                false
-            } else {
-                true
-            }
-        });
-        // Check for collisions with doors
-        let door_collide = self.pos.x < self.exit_loc.x + 8
-            && self.pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
-            && self.pos.y < self.exit_loc.y + 8
-            && self.pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
-        if door_collide {
-            // Win the game (reset for now)
-            self.screen = Screen::Shop;
-            self.no_input_frames = NO_INPUT_FRAMES;
-            return;
-        }
     }
 
     #[no_mangle]
@@ -929,6 +950,11 @@ impl GameMaster {
             self.drill_heat = self.drill_heat.saturating_sub(1);
         } else {
             self.drill_heat = self.drill_heat.saturating_sub(2);
+        }
+        if self.drill_heat > (self.drill_heat_max as f32 * 0.75) as u16 {
+            if self.frame % 8 == 0 {
+                self.sfx_drill_warn();
+            }
         }
         if self.drill_heat >= self.drill_heat_max {
             self.drill_overheat = true;
@@ -1011,18 +1037,16 @@ impl GameMaster {
         for (i, rain) in self.rain_locs.iter().enumerate() {
             let wx = rain.x as usize;
             let wy = rain.y as usize;
-            self.gold_locs.retain(|gold| {
+            for (_, gold) in self.gold_locs.iter().enumerate() {
                 let hit = gold.x >= wx as i16
                     && gold.x < (wx + 4) as i16
                     && gold.y >= wy as i16
                     && gold.y < (wy + 4) as i16;
                 if hit {
-                    tone(280, 1, 100, TONE_PULSE2);
-                    self.gold_rained += 1;
                     hits_gold.push(i);
+                    self.gold_rained += 1;
                 }
-                !hit
-            });
+            }
         }
         for &i in hits_gold.iter().rev() {
             self.gold_locs.retain(|gold| {
@@ -1124,7 +1148,7 @@ impl GameMaster {
         }
         // Move randomly
         for fly in &mut self.fly_locs {
-            let dir = self.rng.i32(0..4);
+            let dir = self.rng.i32(0..6);
             match dir {
                 0 => {
                     fly.x += 1;
@@ -1150,7 +1174,14 @@ impl GameMaster {
                         fly.y = (WORLD_SIZE - 1) as i16;
                     }
                 }
-                _ => {}
+                _ => {
+                    // Flies trend up
+                    // So use the last two cases to go up
+                    fly.y -= 1;
+                    if fly.y < 0 {
+                        fly.y = (WORLD_SIZE - 1) as i16;
+                    }
+                }
             }
             fly.clamp_to_world();
         }
@@ -1340,7 +1371,7 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn main_logic(&mut self) {
         self.input_main();
-        self.player_collisions();
+        self.player_collide_misc();
 
         self.update_drill();
 
@@ -1361,8 +1392,9 @@ impl GameMaster {
     unsafe fn shop_logic(&mut self) {
         fn cont(gm: &mut GameMaster) {
             gm.lvl += 1;
-            if gm.lvl > MAX_LVL {
-                gm.lvl = 1;
+            if gm.lvl >= MAX_LVL {
+                gm.lvl = 0;
+                gm.screen = Screen::GameEnd;
             }
             gm.no_input_frames = NO_INPUT_FRAMES;
             gm.screen = Screen::Transition;
@@ -1421,21 +1453,23 @@ impl GameMaster {
             for x in 0..5 as i32 {
                 for y in 0..8 {
                     *DRAW_COLORS = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
-                    text("AC", x * 32, y * 20);
+                    text("ACID", x * 32, y * 20);
                     *DRAW_COLORS = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
-                    text("RN", x * 32, 10 + y * 20);
+                    text("RAIN", x * 32, 10 + y * 20);
                 }
             }
             *DRAW_COLORS = 1;
             for x in 0..5 as i32 {
                 for y in 0..8 {
-                    text("AC", 1 + x * 32, 1 + y * 20);
-                    text("RN", 1 + x * 32, 1 + 10 + y * 20);
+                    text("ACID", 1 + x * 32, 1 + y * 20);
+                    text("RAIN", 1 + x * 32, 1 + 10 + y * 20);
                 }
             }
-            *DRAW_COLORS = 1;
-            for y in 0..80 {
-                hline(0, y * 2, 160);
+            if self.frame % 512 > 20 {
+                *DRAW_COLORS = 1;
+                for y in 0..80 {
+                    hline(0, y * 2, 160);
+                }
             }
             for i in 0..160 {
                 let sina = (self.frame as f32 / 320.).sin() * 2.0;
@@ -1445,9 +1479,12 @@ impl GameMaster {
                 rect(i as i32, y, 1, (160 - y) as u32);
             }
             *DRAW_COLORS = 2;
-            text("MATHIEU\nDOMBROCK\n2025", 12, 50);
+            text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
             *DRAW_COLORS = 3;
-            text(b"PRESS \x80 TO START", 16, 90);
+            if (self.frame / 30) % 2 == 0 {
+                *DRAW_COLORS = 4;
+            }
+            text(b"PRESS \x80 TO START", 16, 105);
             *DRAW_COLORS = 2;
             let x = 10;
             let y = 10;
@@ -1549,6 +1586,7 @@ impl GameMaster {
             text(trans_text, 50, 60);
         }
     }
+
     #[no_mangle]
     #[allow(static_mut_refs)]
     unsafe fn render_gameover(&mut self) {
@@ -1558,6 +1596,24 @@ impl GameMaster {
             // rect(0, 0, 160, 160);
             *DRAW_COLORS = 4;
             let over_text = "GAME OVER";
+            *DRAW_COLORS = 3;
+            text(over_text, 45, 60);
+            *DRAW_COLORS = 4;
+            text(over_text, 46, 61);
+            *DRAW_COLORS = 2;
+            text(GM.gold.to_string(), 10, 80);
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render_gameend(&mut self) {
+        if GM.screen == Screen::GameEnd {
+            *PALETTE = PAL_GAMEOVER;
+            *DRAW_COLORS = 1;
+            // rect(0, 0, 160, 160);
+            *DRAW_COLORS = 4;
+            let over_text = "GAME END";
             *DRAW_COLORS = 3;
             text(over_text, 45, 60);
             *DRAW_COLORS = 4;
@@ -1846,6 +1902,8 @@ unsafe fn update() {
     GM.render_shop();
     // Transition screen
     GM.render_transition();
+    // Game end screen
+    GM.render_gameend();
     // No input overlay
     GM.draw_no_input();
     // Debug
