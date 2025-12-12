@@ -311,11 +311,12 @@ struct GameMaster {
     gold_rained: usize,
     gold: usize,
     // Dificulty
-    drone_count: usize,
-    fly_count: usize,
-    slider_count: usize,
-    rain_chance_rte: u8,
-    rain_amount_rte: u8,
+    drone_limit: usize,
+    fly_limit: usize,
+    slider_limit: usize,
+    drone_rte: u16,      // Frames between drone spawns
+    rain_chance_rte: u8, // Rate of increase of rain chance
+    rain_amount_rte: u8, // Rate of increase of rain amount
     //
     rain_locs: Vec<Pos>,
     drone_locs: Vec<Pos>,
@@ -344,9 +345,10 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     gold_rained: 0,
     gold: 0,
     // Difficulty
-    drone_count: 100,
-    fly_count: 100,
-    slider_count: 100,
+    drone_limit: 100,
+    fly_limit: 100,
+    slider_limit: 100,
+    drone_rte: 1,
     rain_chance_rte: 1,
     rain_amount_rte: 2,
     //
@@ -504,13 +506,13 @@ impl GameMaster {
         let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
         self.exit_loc = Pos::new(exit_x, 152);
         // Fly locations
-        for _ in 0..self.fly_count {
+        for _ in 0..self.fly_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(24..(WORLD_SIZE as i16));
             self.fly_locs.push(Pos::new(x, y));
         }
         // Slider locations
-        for _ in 0..self.slider_count {
+        for _ in 0..self.slider_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(24..(WORLD_SIZE as i16));
             self.slider_locs.push(Pos::new(x, y));
@@ -736,7 +738,7 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn update_drones(&mut self) {
         // Add drones
-        if self.frame % 200 == 0 && self.drone_locs.len() < self.drone_count {
+        if self.frame % self.drone_rte as u32 == 0 && self.drone_locs.len() < self.drone_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             self.drone_locs.push(Pos::new(x, 0));
         }
@@ -768,31 +770,33 @@ impl GameMaster {
                     }
                 }
             }
+            clear_locs.push(Pos::new(drone.x, drone.y));
             // Remove world blocks at drone position
             // TODO: Cant use self.world_set here as it would borrow self mutably
             // This should be changed to use a list of positions to clear after the loop
-            for dy in 0..4 {
-                for dx in 0..6 {
-                    let wx = (drone.x + dx) as usize;
-                    let wy = (drone.y + dy) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        clear_locs.push(Pos::new(wx as i16, wy as i16));
-                    }
-                }
-            }
+            // for dy in 0..4 {
+            //     for dx in 0..6 {
+            //         let wx = (drone.x + dx) as usize;
+            //         let wy = (drone.y + dy) as usize;
+            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
+            //             clear_locs.push(Pos::new(wx as i16, wy as i16));
+            //         }
+            //     }
+            // }
         }
         if trigger_sfx {
             self.sfx_dmg();
         }
         // Clear world blocks
         for loc in clear_locs {
-            if loc.x >= 0 && loc.y >= 0 {
-                let wx = loc.x as usize;
-                let wy = loc.y as usize;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    self.world_set(wx, wy, false);
-                }
-            }
+            self.world_set_area(loc.x as usize, loc.y as usize, 8, 4, false);
+            // if loc.x >= 0 && loc.y >= 0 {
+            //     let wx = loc.x as usize;
+            //     let wy = loc.y as usize;
+            //     if wx < WORLD_SIZE && wy < WORLD_SIZE {
+            //         self.world_set(wx, wy, false);
+            //     }
+            // }
         }
     }
     #[no_mangle]
@@ -951,12 +955,21 @@ impl GameMaster {
 
     #[no_mangle]
     #[allow(static_mut_refs)]
-    // TODO: This should be optimized to not check every block every frame
-    // Could just check all blocks every few frames
+    // NOTE: This is a VERY expensive operation
+    // We need to split the world update over multiple frames or we will run out of memeory
+    // The larger the split size the faster the world updates
+    // This effects the speed of falling blocks
+    // WARN: `split_size` must evenly divide `WORLD_SIZE`
     unsafe fn update_world(&mut self) {
         // If world blocks have less than 4 neighbors, they fall down
+        let split_size = 4;
+        let falling_limit = 160; // Max number of blocks to fall per update
+        let world_split = WORLD_SIZE / split_size;
+        let world_offset = (self.frame % split_size as u32) as usize;
+        let start_y = world_offset * world_split;
+        let end_y = start_y + world_split;
         let mut to_fall = Vec::new();
-        for y in (1..WORLD_SIZE - 1).rev() {
+        for y in (start_y..end_y).rev() {
             for x in 1..WORLD_SIZE - 1 {
                 if let Some(cell) = self.world_get(x, y) {
                     // Only check alive cells
@@ -976,7 +989,7 @@ impl GameMaster {
                                 }
                             }
                         }
-                        if neighbors < 4 {
+                        if neighbors < 4 && to_fall.len() < falling_limit {
                             to_fall.push((x, y));
                         }
                     }
@@ -984,25 +997,23 @@ impl GameMaster {
             }
         }
         for (x, y) in to_fall {
-            if self.frame % 6 == 0 {
-                // Check for collision below
-                if let Some(below) = self.world_get(x, y + 1) {
-                    if !below {
-                        // Check for player collision
-                        let mut collide_with_player = false;
-                        for dy in 0..PLAYER_SIZE as i16 {
-                            for dx in 0..PLAYER_SIZE as i16 {
-                                let px = self.pos.x + dx;
-                                let py = self.pos.y + dy;
-                                if px == x as i16 && py == (y as i16 + 1) {
-                                    collide_with_player = true;
-                                }
+            // Check for collision below
+            if let Some(below) = self.world_get(x, y + 1) {
+                if !below {
+                    // Check for player collision
+                    let mut collide_with_player = false;
+                    for dy in 0..PLAYER_SIZE as i16 {
+                        for dx in 0..PLAYER_SIZE as i16 {
+                            let px = self.pos.x + dx;
+                            let py = self.pos.y + dy;
+                            if px == x as i16 && py == (y as i16 + 1) {
+                                collide_with_player = true;
                             }
                         }
-                        if !collide_with_player {
-                            self.world_set(x, y, false);
-                            self.world_set(x, y + 1, true);
-                        }
+                    }
+                    if !collide_with_player {
+                        self.world_set(x, y, false);
+                        self.world_set(x, y + 1, true);
                     }
                 }
             }
@@ -1290,7 +1301,7 @@ unsafe fn update() {
         if gamepad != 0 {
             GM.screen = Screen::Game;
             // Seed random with current frame
-            GM.rng = Rng::with_seed(GM.seed);
+            GM.rng = Rng::with_seed(123);
             GM.gen_world();
         }
         GM.seed += 1; // Increment seed while on start screen
