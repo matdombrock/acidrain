@@ -344,9 +344,9 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     gold_rained: 0,
     gold: 0,
     // Difficulty
-    drone_count: 0,
-    fly_count: 0,
-    slider_count: 1,
+    drone_count: 100,
+    fly_count: 100,
+    slider_count: 100,
     rain_chance_rte: 100,
     rain_amount_rte: 200,
     //
@@ -368,6 +368,10 @@ impl GameMaster {
     }
     fn world_set(&mut self, x: usize, y: usize, value: bool) {
         let index = y * WORLD_SIZE + x;
+        // Clamp to world size
+        if index >= self.world.len() {
+            return;
+        }
         self.world.set(index, value);
     }
     fn world_set_area(&mut self, x: usize, y: usize, w: usize, h: usize, value: bool) {
@@ -427,6 +431,7 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn reset(&mut self, full: bool) {
         // Reset game state
+        self.screen = Screen::Start;
         self.frame = 0;
         self.pos = Pos { x: 76, y: 0 };
         self.world = MiniBitVec::new();
@@ -438,7 +443,6 @@ impl GameMaster {
         self.dmg_frames = 0;
         self.has_gold = false;
         self.is_drilling = false;
-        self.screen = Screen::Start;
         self.dir = 0;
         self.drone_locs.clear();
         self.fly_locs.clear();
@@ -955,6 +959,7 @@ impl GameMaster {
         for y in (1..WORLD_SIZE - 1).rev() {
             for x in 1..WORLD_SIZE - 1 {
                 if let Some(cell) = self.world_get(x, y) {
+                    // Only check alive cells
                     if cell {
                         let mut neighbors = 0;
                         for oy in -1..=1 {
@@ -1245,9 +1250,27 @@ impl GameMaster {
         }
 
         // Debug
+        let dbg_string = format!(
+            "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
+            self.frame,
+            self.drone_locs.len(),
+            self.fly_locs.len(),
+            self.slider_locs.len(),
+            self.rain_locs.len()
+        );
+        text(dbg_string.as_str(), 100, 120);
         // text(ST.rain_locs.len().to_string(), 120, 2);
         // text(ST.hp.to_string(), 120, 8);
-        // line(80, 0, ST.pos.x as i32 + 4, ST.pos.y as i32);
+        // line
+        let psize = std::mem::size_of::<Pos>();
+        let drone_mem = self.drone_locs.capacity() * psize;
+        let fly_mem = self.fly_locs.capacity() * psize;
+        let slider_mem = self.slider_locs.capacity() * psize;
+        let world_mem = self.world.data.capacity();
+        let rain_mem = self.rain_locs.capacity() * psize;
+        let total = drone_mem + fly_mem + slider_mem + world_mem + rain_mem;
+        text(&format!("MEM: {} B", total), 4, 20);
+        (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
     }
 }
 
@@ -1270,7 +1293,7 @@ unsafe fn update() {
             GM.rng = Rng::with_seed(GM.seed);
             GM.gen_world();
         }
-        GM.seed += 1;
+        GM.seed += 1; // Increment seed while on start screen
     } else if GM.screen == Screen::Game {
         GM.main_logic();
         GM.frame += 1;
