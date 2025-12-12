@@ -540,7 +540,7 @@ struct GameMaster {
     exit_loc: Pos,
     gold_locs: Vec<Pos>,
     gold_rained: usize,
-    gold: usize,
+    gold: u16,
     drill_heat_max: u16,
     drill_heat: u16,
     drill_overheat: bool,
@@ -556,6 +556,10 @@ struct GameMaster {
     has_gold: bool,
     is_drilling: bool,
     screen: Screen,
+    cost_heart: u16,
+    cost_drill_speed: u16,
+    cost_drill_cool: u16,
+    purchased: u8,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -575,7 +579,7 @@ impl GameMaster {
             exit_loc: Pos { x: 0, y: 0 },
             gold_locs: Vec::new(),
             gold_rained: 0,
-            gold: 0,
+            gold: 16,
             drill_heat_max: 256,
             drill_heat: 0,
             drill_overheat: false,
@@ -591,6 +595,10 @@ impl GameMaster {
             has_gold: false,
             is_drilling: false,
             screen: Screen::Start,
+            cost_heart: 4,
+            cost_drill_speed: 8,
+            cost_drill_cool: 8,
+            purchased: 0, // None, shop, drill speed, drill cool
         }
     }
     unsafe fn input_check(&mut self, check: u8) -> bool {
@@ -725,7 +733,7 @@ impl GameMaster {
         }
     }
 
-    fn draw_gold(&mut self, x: i32, y: i32, amt: usize) {
+    fn draw_gold(&mut self, x: i32, y: i32, amt: u16) {
         let frame = (self.frame / 16) % 2;
         if frame == 0 {
             blit(&GOLDLRG1, x, y, 8, 8, BLIT_1BPP);
@@ -765,6 +773,16 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn sfx_drill_overheat(&mut self) {
         tone(150, 60, 128, TONE_NOISE);
+    }
+
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_buy(&mut self) {
+        tone(600, 2, 128, TONE_TRIANGLE);
+    }
+
+    #[allow(static_mut_refs)]
+    unsafe fn sfx_deny(&mut self) {
+        tone(400, 2, 128, TONE_TRIANGLE);
     }
 
     #[no_mangle]
@@ -1340,6 +1358,62 @@ impl GameMaster {
 
     #[no_mangle]
     #[allow(static_mut_refs)]
+    unsafe fn shop_logic(&mut self) {
+        fn cont(gm: &mut GameMaster) {
+            gm.lvl += 1;
+            if gm.lvl > MAX_LVL {
+                gm.lvl = 1;
+            }
+            gm.no_input_frames = NO_INPUT_FRAMES;
+            gm.screen = Screen::Transition;
+        }
+        if self.purchased > 0 && self.input_check_any() {
+            self.purchased = 0;
+            self.no_input_frames = NO_INPUT_FRAMES;
+        }
+        if self.input_check(BUTTON_UP) {
+            // Buy heart piece
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gold >= self.cost_heart && self.hp < 8 {
+                self.gold = self.gold.saturating_sub(self.cost_heart);
+                self.hp += 1;
+                self.purchased = 1;
+                self.sfx_buy();
+            } else {
+                self.sfx_deny();
+                self.dmg_frames = DMG_FRAMES;
+            }
+        } else if self.input_check(BUTTON_LEFT) {
+            // Buy drill speed
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gold >= self.cost_drill_speed && self.drill_speed < 128 {
+                self.gold = self.gold.saturating_sub(self.cost_drill_speed);
+                self.drill_speed += 8;
+                self.purchased = 2;
+                self.sfx_buy();
+            } else {
+                self.sfx_deny();
+                self.dmg_frames = DMG_FRAMES;
+            }
+        } else if self.input_check(BUTTON_RIGHT) {
+            // Buy drill cooling
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gold >= self.cost_drill_cool && self.drill_heat_max < 1024 {
+                self.gold = self.gold.saturating_sub(self.cost_drill_cool);
+                self.drill_heat_max += 64;
+                self.purchased = 3;
+                self.sfx_buy();
+            } else {
+                self.sfx_deny();
+                self.dmg_frames = DMG_FRAMES;
+            }
+        } else if self.input_check(BUTTON_DOWN) {
+            cont(self);
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
     unsafe fn render_start(&mut self) {
         if GM.screen == Screen::Start {
             *DRAW_COLORS = 1;
@@ -1422,20 +1496,45 @@ impl GameMaster {
             vline(115, 45, 80);
             // Up
             text(b"\x86HEART PIECE", 12, 50);
-            self.draw_gold(120, 50, 8);
+            self.draw_gold(120, 50, self.cost_heart);
             text(format!("{}/8", self.hp), 20, 60);
             // Left
             text(b"\x84DRILL SPEED", 12, 80);
-            self.draw_gold(120, 80, 32);
+            self.draw_gold(120, 80, self.cost_drill_speed);
             text(format!("{}/128", self.drill_speed), 20, 90);
             // Righ
             text(b"\x85DRILL COOLR", 12, 110);
-            self.draw_gold(120, 110, 32);
+            self.draw_gold(120, 110, self.cost_drill_cool);
             text(format!("{}/1024", self.drill_heat_max), 20, 120);
             // Down
             *DRAW_COLORS = 4;
             hline(0, 135, 160);
             text(b"\x87NEXT  LEVEL", 30, 145);
+
+            // Purchased
+            if self.purchased > 0 {
+                *DRAW_COLORS = 1;
+                rect(0, 45, 160, 120);
+                *DRAW_COLORS = 4;
+                text("PURCHASED!", 12, 60);
+                match self.purchased {
+                    1 => {
+                        text("HEART PIECE", 12, 70);
+                        text(format!("{}/{}", self.hp, 8), 12, 80);
+                    }
+                    2 => {
+                        text("DRILL SPEED", 12, 70);
+                        text(format!("{}/{}", self.drill_speed, 128), 12, 80);
+                    }
+                    3 => {
+                        text("DRILL COOLR", 12, 70);
+                        text(format!("{}/{}", self.drill_heat_max, 1024), 12, 80);
+                    }
+                    _ => {}
+                }
+                *DRAW_COLORS = 3;
+                text(b"\x80TO CONTINUE", 12, 110);
+            }
         }
     }
 
@@ -1470,16 +1569,31 @@ impl GameMaster {
 
     #[no_mangle]
     #[allow(static_mut_refs)]
-    unsafe fn render(&mut self) {
-        if GM.screen != Screen::Game {
-            return;
+    unsafe fn draw_no_input(&mut self) {
+        if GM.no_input_frames > 0 {
+            *DRAW_COLORS = 2;
+            rect(0, 0, 160, 2);
+            rect(0, 158, 160, 2);
+            rect(0, 0, 2, 160);
+            rect(158, 0, 2, 160);
+            GM.no_input_frames -= 1;
         }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render(&mut self) {
+        // Always run palette change first
         // If took damage, change palette briefly
         if GM.dmg_frames > 0 {
             *PALETTE = PAL_DMG;
             GM.dmg_frames -= 1;
         } else {
             *PALETTE = PAL;
+        }
+
+        if GM.screen != Screen::Game {
+            return;
         }
 
         // Health
@@ -1709,14 +1823,7 @@ unsafe fn update() {
     } else if GM.screen == Screen::GameOver {
         // *PALETTE = PAL_GAMEOVER;
     } else if GM.screen == Screen::Shop {
-        if GM.input_check_any() {
-            GM.no_input_frames = NO_INPUT_FRAMES;
-            GM.lvl += 1;
-            if GM.lvl > MAX_LVL {
-                GM.lvl = 1;
-            }
-            GM.screen = Screen::Transition;
-        }
+        GM.shop_logic();
         GM.frame += 1;
     } else if GM.screen == Screen::Transition {
         if GM.input_check_any() {
@@ -1739,6 +1846,8 @@ unsafe fn update() {
     GM.render_shop();
     // Transition screen
     GM.render_transition();
+    // No input overlay
+    GM.draw_no_input();
     // Debug
     if DEBUG {
         let dbg_string = format!(
