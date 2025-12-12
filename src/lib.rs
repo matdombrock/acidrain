@@ -313,6 +313,9 @@ struct GameMaster {
     gold_locs: Vec<Pos>,
     gold_rained: usize,
     gold: usize,
+    drill_heat_max: u16,
+    drill_heat: u16,
+    drill_overheat: bool,
     // Dificulty
     drone_limit: usize,
     fly_limit: usize,
@@ -337,7 +340,7 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     rng: Rng::new(),
     seed: 0,
     frame: 0,
-    hp: 10,
+    hp: 8,
     pos: Pos { x: 76, y: 0 },
     dir: 0,
     world: MiniBitVec {
@@ -349,6 +352,9 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     gold_locs: Vec::new(),
     gold_rained: 0,
     gold: 0,
+    drill_heat_max: 100,
+    drill_heat: 0,
+    drill_overheat: false,
     // Difficulty
     drone_limit: 5,
     fly_limit: 5,
@@ -367,7 +373,7 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     has_drilled: false,
     has_gold: false,
     is_drilling: false,
-    screen: Screen::Transition,
+    screen: Screen::Start,
 });
 impl GameMaster {
     unsafe fn input_check(&mut self, check: u8) -> bool {
@@ -565,10 +571,13 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn input_main(&mut self) {
         let pos_cache = self.pos;
+        let mut drill_down = false;
         self.is_drilling = false;
         self.dir = 0;
         if self.input_check(BUTTON_1) {
-            self.is_drilling = true;
+            if !self.drill_overheat {
+                drill_down = true;
+            }
         }
         if self.input_check(BUTTON_LEFT) {
             self.pos.x -= 1;
@@ -578,7 +587,8 @@ impl GameMaster {
             self.pos.x += 1;
             self.dir = 2;
         }
-        if self.is_drilling && self.input_check(BUTTON_DOWN) {
+        if drill_down && self.input_check(BUTTON_DOWN) {
+            self.is_drilling = true;
             self.has_drilled = true;
             self.dir = 3;
             // Remove the 4 blocks under the smiley
@@ -589,21 +599,10 @@ impl GameMaster {
                 1,
                 self.drill_speed,
             );
-            // for dy in 0..1 {
-            //     for dx in 0..(PLAYER_SIZE + 2) as i16 {
-            //         let wx = (self.pos.x + dx - 1) as usize;
-            //         let wy = (self.pos.y + dy + PLAYER_SIZE as i16) as usize;
-            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            //             if self.rng.i32(0..100) < 50 {
-            //                 self.world_set(wx, wy, false);
-            //                 self.sfx_dig();
-            //             }
-            //         }
-            //     }
-            // }
         }
 
-        if self.is_drilling && self.input_check(BUTTON_RIGHT) {
+        if drill_down && self.input_check(BUTTON_RIGHT) {
+            self.is_drilling = true;
             self.has_drilled = true;
             // Remove the 4 blocks to the right of the smiley
             self.drill_area(
@@ -613,20 +612,9 @@ impl GameMaster {
                 (PLAYER_SIZE + 1) as usize,
                 self.drill_speed,
             );
-            // for dy in 0..(PLAYER_SIZE + 1) as i16 {
-            //     for dx in 0..1 {
-            //         let wx = (self.pos.x - 1 + dx + PLAYER_SIZE as i16) as usize;
-            //         let wy = (self.pos.y + dy - 1) as usize;
-            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            //             if self.rng.i32(0..100) < 50 {
-            //                 self.world_set(wx, wy, false);
-            //                 self.sfx_dig();
-            //             }
-            //         }
-            //     }
-            // }
         }
-        if self.is_drilling && self.input_check(BUTTON_LEFT) {
+        if drill_down && self.input_check(BUTTON_LEFT) {
+            self.is_drilling = true;
             self.has_drilled = true;
             // Remove the 4 blocks to the left of the smiley
             self.drill_area(
@@ -636,18 +624,6 @@ impl GameMaster {
                 (PLAYER_SIZE + 1) as usize,
                 self.drill_speed,
             );
-            // for dy in 0..(PLAYER_SIZE + 1) as i16 {
-            //     for dx in 0..1 {
-            //         let wx = (self.pos.x - dx) as usize;
-            //         let wy = (self.pos.y + dy - 1) as usize;
-            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            //             if self.rng.i32(0..100) < 50 {
-            //                 self.world_set(wx, wy, false);
-            //                 self.sfx_dig();
-            //             }
-            //         }
-            //     }
-            // }
         }
         self.player_collide(pos_cache);
         let pos_cache = self.pos;
@@ -685,6 +661,26 @@ impl GameMaster {
             // Win the game (reset for now)
             self.reset(false);
             return;
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn update_drill(&mut self) {
+        if self.is_drilling {
+            self.drill_heat = self.drill_heat.saturating_add(1);
+        } else if self.drill_overheat {
+            // Slower cooldown when overheated
+            self.drill_heat = self.drill_heat.saturating_sub(1);
+        } else {
+            self.drill_heat = self.drill_heat.saturating_sub(2);
+        }
+        if self.drill_heat >= self.drill_heat_max {
+            self.drill_overheat = true;
+        }
+        // Release overheat when cooled down
+        if self.drill_heat == 0 {
+            self.drill_overheat = false;
         }
     }
 
@@ -1088,6 +1084,8 @@ impl GameMaster {
         self.input_main();
         self.player_collisions();
 
+        self.update_drill();
+
         self.update_rain();
         self.update_drones();
         self.update_flies();
@@ -1110,6 +1108,27 @@ impl GameMaster {
         } else {
             *PALETTE = PAL;
         }
+
+        // Health
+        for i in 0..GM.hp {
+            *DRAW_COLORS = 3;
+            // rect(45 + i as i32 * 6, 4, 4, 4);
+            blit(&HEART, 76 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
+        }
+        // Gold collected
+        text(GM.gold.to_string(), 4, 2);
+
+        // Heat bar
+        *DRAW_COLORS = 2;
+        let heat_bar_width = 80;
+        let heat_width = (GM.drill_heat as u32 * heat_bar_width) / (GM.drill_heat_max as u32);
+        rect(76, 12, heat_bar_width, 4);
+        *DRAW_COLORS = 3;
+        if GM.drill_overheat {
+            let c = (GM.frame / 10) % 2;
+            *DRAW_COLORS = (c + 3) as u16;
+        }
+        rect(76, 12, heat_width, 4);
         // Render the world
         for y in 0..WORLD_SIZE {
             for x in 0..WORLD_SIZE {
@@ -1285,15 +1304,6 @@ impl GameMaster {
             text(help_text, 50, 50);
         }
 
-        // Health
-        for i in 0..GM.hp {
-            *DRAW_COLORS = 3;
-            // rect(45 + i as i32 * 6, 4, 4, 4);
-            blit(&HEART, 55 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
-        }
-        // Gold collected
-        text(GM.gold.to_string(), 4, 2);
-
         // Start screen
         if GM.screen == Screen::Start {
             *DRAW_COLORS = 1;
@@ -1333,7 +1343,8 @@ impl GameMaster {
             text("BUY UPGRADES:", 30, 40);
             *DRAW_COLORS = 3;
             text("HEART PIECE", 30, 60);
-            text("DRILL SPEED", 30, 80);
+            text("DRILL SPEED", 30, 70);
+            text("DRILL COOLR", 30, 80);
         }
 
         // Debug
