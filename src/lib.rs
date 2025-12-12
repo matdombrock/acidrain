@@ -347,8 +347,8 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     drone_count: 100,
     fly_count: 100,
     slider_count: 100,
-    rain_chance_rte: 100,
-    rain_amount_rte: 200,
+    rain_chance_rte: 1,
+    rain_amount_rte: 2,
     //
     rain_locs: Vec::new(),
     drone_locs: Vec::new(),
@@ -1263,13 +1263,13 @@ impl GameMaster {
         // text(ST.hp.to_string(), 120, 8);
         // line
         let psize = std::mem::size_of::<Pos>();
-        let drone_mem = self.drone_locs.capacity() * psize;
-        let fly_mem = self.fly_locs.capacity() * psize;
-        let slider_mem = self.slider_locs.capacity() * psize;
-        let world_mem = self.world.data.capacity();
-        let rain_mem = self.rain_locs.capacity() * psize;
-        let total = drone_mem + fly_mem + slider_mem + world_mem + rain_mem;
-        text(&format!("MEM: {} B", total), 4, 20);
+        let mut size = 0;
+        size += self.drone_locs.capacity() * psize;
+        size += self.fly_locs.capacity() * psize;
+        size += self.slider_locs.capacity() * psize;
+        size += self.world.data.capacity();
+        size += self.rain_locs.capacity() * psize;
+        text(&format!("MEM: {} B", size), 4, 20);
         (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
     }
 }
