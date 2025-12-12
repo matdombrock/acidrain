@@ -196,6 +196,7 @@ const LOGO: [u8; 16] = [
     0b00000000, 0b00000000,
 ];
 
+static DEBUG: bool = false;
 static WORLD_SIZE: usize = 160;
 static PLAYER_SIZE: u8 = 8;
 static GOLD_COUNT: usize = 64;
@@ -306,6 +307,7 @@ struct GameMaster {
     pos: Pos,
     dir: u8,
     world: MiniBitVec,
+    drill_speed: u8,
     exit_loc: Pos,
     gold_locs: Vec<Pos>,
     gold_rained: usize,
@@ -324,6 +326,7 @@ struct GameMaster {
     slider_locs: Vec<Pos>,
     player_flags_last: u32,
     dmg_frames: u8,
+    no_input_frames: u8,
     has_drilled: bool,
     has_gold: bool,
     is_drilling: bool,
@@ -340,17 +343,18 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
         data: Vec::new(),
         len: 0,
     },
+    drill_speed: 64,
     exit_loc: Pos { x: 0, y: 0 },
     gold_locs: Vec::new(),
     gold_rained: 0,
     gold: 0,
     // Difficulty
-    drone_limit: 100,
-    fly_limit: 100,
-    slider_limit: 100,
-    drone_rte: 1,
-    rain_chance_rte: 1,
-    rain_amount_rte: 2,
+    drone_limit: 5,
+    fly_limit: 5,
+    slider_limit: 5,
+    drone_rte: 200,
+    rain_chance_rte: 100,
+    rain_amount_rte: 200,
     //
     rain_locs: Vec::new(),
     drone_locs: Vec::new(),
@@ -358,12 +362,28 @@ static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster {
     slider_locs: Vec::new(),
     player_flags_last: BLIT_1BPP,
     dmg_frames: 0,
+    no_input_frames: 0,
     has_drilled: false,
     has_gold: false,
     is_drilling: false,
     screen: Screen::Start,
 });
 impl GameMaster {
+    unsafe fn input_check(&mut self, check: u8) -> bool {
+        if self.no_input_frames > 0 {
+            return false;
+        }
+        let gamepad = *GAMEPAD1;
+        (gamepad & check) != 0
+    }
+    unsafe fn input_check_any(&mut self) -> bool {
+        if self.no_input_frames > 0 {
+            return false;
+        }
+        let gamepad = *GAMEPAD1;
+        gamepad != 0
+    }
+
     fn world_get(&self, x: usize, y: usize) -> Option<bool> {
         let index = y * WORLD_SIZE + x;
         self.world.get(index)
@@ -383,6 +403,21 @@ impl GameMaster {
                 let wy = y + dy;
                 if wx < WORLD_SIZE && wy < WORLD_SIZE {
                     self.world_set(wx, wy, value);
+                }
+            }
+        }
+    }
+    unsafe fn drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
+        for dy in 0..h {
+            for dx in 0..w {
+                let wx = x + dx;
+                let wy = y + dy;
+                if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                    // 128 = 100% chance
+                    if self.rng.i32(0..128) < chance as i32 {
+                        self.world_set(wx, wy, false);
+                        self.sfx_dig();
+                    }
                 }
             }
         }
@@ -432,6 +467,8 @@ impl GameMaster {
 
     #[allow(static_mut_refs)]
     unsafe fn reset(&mut self, full: bool) {
+        // Block input for N frames
+        self.no_input_frames = 120;
         // Reset game state
         self.screen = Screen::Start;
         self.frame = 0;
@@ -525,67 +562,87 @@ impl GameMaster {
         let pos_cache = self.pos;
         self.is_drilling = false;
         self.dir = 0;
-        let gamepad = *GAMEPAD1;
-        if gamepad & BUTTON_1 != 0 {
+        if self.input_check(BUTTON_1) {
             self.is_drilling = true;
         }
-        if gamepad & BUTTON_LEFT != 0 {
+        if self.input_check(BUTTON_LEFT) {
             self.pos.x -= 1;
             self.dir = 1;
         }
-        if gamepad & BUTTON_RIGHT != 0 {
+        if self.input_check(BUTTON_RIGHT) {
             self.pos.x += 1;
             self.dir = 2;
         }
-        if self.is_drilling && (gamepad & BUTTON_DOWN != 0) {
+        if self.is_drilling && self.input_check(BUTTON_DOWN) {
             self.has_drilled = true;
             self.dir = 3;
             // Remove the 4 blocks under the smiley
-            for dy in 0..1 {
-                for dx in 0..(PLAYER_SIZE + 2) as i16 {
-                    let wx = (self.pos.x + dx - 1) as usize;
-                    let wy = (self.pos.y + dy + PLAYER_SIZE as i16) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        if self.rng.i32(0..100) < 50 {
-                            self.world_set(wx, wy, false);
-                            self.sfx_dig();
-                        }
-                    }
-                }
-            }
+            self.drill_area(
+                (self.pos.x - 1) as usize,
+                (self.pos.y + PLAYER_SIZE as i16) as usize,
+                (PLAYER_SIZE + 2) as usize,
+                1,
+                self.drill_speed,
+            );
+            // for dy in 0..1 {
+            //     for dx in 0..(PLAYER_SIZE + 2) as i16 {
+            //         let wx = (self.pos.x + dx - 1) as usize;
+            //         let wy = (self.pos.y + dy + PLAYER_SIZE as i16) as usize;
+            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
+            //             if self.rng.i32(0..100) < 50 {
+            //                 self.world_set(wx, wy, false);
+            //                 self.sfx_dig();
+            //             }
+            //         }
+            //     }
+            // }
         }
 
-        if self.is_drilling && (gamepad & BUTTON_RIGHT != 0) {
+        if self.is_drilling && self.input_check(BUTTON_RIGHT) {
             self.has_drilled = true;
             // Remove the 4 blocks to the right of the smiley
-            for dy in 0..(PLAYER_SIZE + 1) as i16 {
-                for dx in 0..1 {
-                    let wx = (self.pos.x - 1 + dx + PLAYER_SIZE as i16) as usize;
-                    let wy = (self.pos.y + dy - 1) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        if self.rng.i32(0..100) < 50 {
-                            self.world_set(wx, wy, false);
-                            self.sfx_dig();
-                        }
-                    }
-                }
-            }
+            self.drill_area(
+                (self.pos.x + PLAYER_SIZE as i16 - 1) as usize,
+                (self.pos.y - 1) as usize,
+                1,
+                (PLAYER_SIZE + 1) as usize,
+                self.drill_speed,
+            );
+            // for dy in 0..(PLAYER_SIZE + 1) as i16 {
+            //     for dx in 0..1 {
+            //         let wx = (self.pos.x - 1 + dx + PLAYER_SIZE as i16) as usize;
+            //         let wy = (self.pos.y + dy - 1) as usize;
+            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
+            //             if self.rng.i32(0..100) < 50 {
+            //                 self.world_set(wx, wy, false);
+            //                 self.sfx_dig();
+            //             }
+            //         }
+            //     }
+            // }
         }
-        if self.is_drilling && (gamepad & BUTTON_LEFT != 0) {
+        if self.is_drilling && self.input_check(BUTTON_LEFT) {
             self.has_drilled = true;
             // Remove the 4 blocks to the left of the smiley
-            for dy in 0..(PLAYER_SIZE + 1) as i16 {
-                for dx in 0..1 {
-                    let wx = (self.pos.x - dx) as usize;
-                    let wy = (self.pos.y + dy - 1) as usize;
-                    if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                        if self.rng.i32(0..100) < 50 {
-                            self.world_set(wx, wy, false);
-                            self.sfx_dig();
-                        }
-                    }
-                }
-            }
+            self.drill_area(
+                (self.pos.x) as usize,
+                (self.pos.y - 1) as usize,
+                1,
+                (PLAYER_SIZE + 1) as usize,
+                self.drill_speed,
+            );
+            // for dy in 0..(PLAYER_SIZE + 1) as i16 {
+            //     for dx in 0..1 {
+            //         let wx = (self.pos.x - dx) as usize;
+            //         let wy = (self.pos.y + dy - 1) as usize;
+            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
+            //             if self.rng.i32(0..100) < 50 {
+            //                 self.world_set(wx, wy, false);
+            //                 self.sfx_dig();
+            //             }
+            //         }
+            //     }
+            // }
         }
         self.player_collide(pos_cache);
         let pos_cache = self.pos;
@@ -1261,27 +1318,26 @@ impl GameMaster {
         }
 
         // Debug
-        let dbg_string = format!(
-            "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
-            self.frame,
-            self.drone_locs.len(),
-            self.fly_locs.len(),
-            self.slider_locs.len(),
-            self.rain_locs.len()
-        );
-        text(dbg_string.as_str(), 100, 120);
-        // text(ST.rain_locs.len().to_string(), 120, 2);
-        // text(ST.hp.to_string(), 120, 8);
-        // line
-        let psize = std::mem::size_of::<Pos>();
-        let mut size = 0;
-        size += self.drone_locs.capacity() * psize;
-        size += self.fly_locs.capacity() * psize;
-        size += self.slider_locs.capacity() * psize;
-        size += self.world.data.capacity();
-        size += self.rain_locs.capacity() * psize;
-        text(&format!("MEM: {} B", size), 4, 20);
-        (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
+        if DEBUG {
+            let dbg_string = format!(
+                "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
+                self.frame,
+                self.drone_locs.len(),
+                self.fly_locs.len(),
+                self.slider_locs.len(),
+                self.rain_locs.len()
+            );
+            text(dbg_string.as_str(), 100, 120);
+            let psize = std::mem::size_of::<Pos>();
+            let mut size = 0;
+            size += self.drone_locs.capacity() * psize;
+            size += self.fly_locs.capacity() * psize;
+            size += self.slider_locs.capacity() * psize;
+            size += self.world.data.capacity();
+            size += self.rain_locs.capacity() * psize;
+            text(&format!("MEM: {} B", size), 4, 20);
+            (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
+        }
     }
 }
 
@@ -1297,20 +1353,20 @@ unsafe fn start() {
 unsafe fn update() {
     // UPDATE
     if GM.screen == Screen::Start {
-        let gamepad = *GAMEPAD1;
-        if gamepad != 0 {
+        GM.seed += 1; // Increment seed while on start screen
+        if GM.input_check_any() {
             GM.screen = Screen::Game;
             // Seed random with current frame
-            GM.rng = Rng::with_seed(123);
+            GM.rng = Rng::with_seed(GM.seed);
             GM.gen_world();
         }
-        GM.seed += 1; // Increment seed while on start screen
     } else if GM.screen == Screen::Game {
         GM.main_logic();
         GM.frame += 1;
     } else if GM.screen == Screen::GameOver {
         *PALETTE = PAL_GAMEOVER;
     }
+    GM.no_input_frames = GM.no_input_frames.saturating_sub(1);
 
     // DRAW
     GM.render();
