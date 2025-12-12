@@ -207,25 +207,126 @@ const SLIDER2: [u8; 8] = [
     0b11111111,
 ];
 #[rustfmt::skip]
-const LOGO: [u8; 16] = [
+const LOGO_A: [u8; 32] = [
+    0b11110000, 0b00001111,
+    0b11000000, 0b00000011,
+    0b00000000, 0b00000000,
+    0b00000011, 0b11000000,
+    0b00000011, 0b11000000,
     0b00000000, 0b00000000,
     0b00000000, 0b00000000,
     0b00000000, 0b00000000,
     0b00000000, 0b00000000,
     0b00000000, 0b00000000,
-    0b00000000, 0b00000000,
-    0b00000000, 0b00000000,
-    0b00000000, 0b00000000,
+    0b00000011, 0b11000000,
+    0b00000011, 0b11000000,
+    0b00000011, 0b11000000,
+    0b00000011, 0b11000000,
+    0b00000011, 0b11000000,
+    0b10000011, 0b11000001,
 ];
-
+#[rustfmt::skip]
+const LOGO_C: [u8; 32] = [
+    0b11000000, 0b00000001,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000111, 0b11100000,
+    0b10000111, 0b11111111,
+    0b10000111, 0b11111111,
+    0b10000111, 0b11100000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b11000000, 0b00000001,
+];
+#[rustfmt::skip]
+const LOGO_I: [u8; 32] = [
+    0b10000000, 0b00000001,
+    0b00000000, 0b00000000,
+    0b00000000, 0b00000000,
+    0b10000000, 0b00000001,
+    0b00000000, 0b00000000,
+    0b10000000, 0b00000001,
+    0b11111000, 0b00011111,
+    0b11111000, 0b00011111,
+    0b11111000, 0b00011111,
+    0b11111000, 0b00011111,
+    0b11111000, 0b00011111,
+    0b10000000, 0b00000001,
+    0b00000000, 0b00000000,
+    0b00000000, 0b00000000,
+    0b00000000, 0b00000000,
+    0b10000000, 0b00000001,
+];
+#[rustfmt::skip]
+const LOGO_D: [u8; 32] = [
+    0b10000000, 0b00000001,
+    0b11000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000001, 0b11111000,
+    0b10000001, 0b11111000,
+    0b10000001, 0b11111000,
+    0b10000001, 0b11111000,
+    0b10000001, 0b11111000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b10000000, 0b00000000,
+    0b11000000, 0b00000001,
+];
+#[rustfmt::skip]
+const LOGO_R: [u8; 32] = [
+    0b10000000, 0b00000011,
+    0b01000000, 0b00000001,
+    0b00000000, 0b00000001,
+    0b00000000, 0b11100001,
+    0b00000000, 0b11100001,
+    0b00000000, 0b00000001,
+    0b00000000, 0b00000001,
+    0b00000000, 0b00000001,
+    0b00000000, 0b00000001,
+    0b00000000, 0b00000011,
+    0b00000000, 0b00000001,
+    0b00000000, 0b11000001,
+    0b00000000, 0b11000001,
+    0b00000000, 0b11000001,
+    0b00000000, 0b11000001,
+    0b10000000, 0b11000001,
+];
+#[rustfmt::skip]
+const LOGO_N: [u8; 32] = [
+    0b10000000, 0b11100001,
+    0b01000000, 0b11100000,
+    0b00000000, 0b11100000,
+    0b00000000, 0b11100000,
+    0b00000000, 0b11100000,
+    0b00000001, 0b00100000,
+    0b00000001, 0b00000000,
+    0b00000001, 0b10000000,
+    0b00000001, 0b10000000,
+    0b00000001, 0b10000001,
+    0b00000001, 0b10000000,
+    0b00000001, 0b11000000,
+    0b00000001, 0b11000000,
+    0b00000001, 0b11000000,
+    0b00000001, 0b11000000,
+    0b10000001, 0b11000000,
+];
 static DEBUG: bool = false;
 static WORLD_SIZE: usize = 160;
 static PLAYER_SIZE: u8 = 8;
-static GOLD_COUNT: usize = 64;
 static RAIN_MAX: usize = 500;
 static PAL: [u32; 4] = [0x001110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static PAL_DMG: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
-static PAL_GAMEOVER: [u32; 4] = [0x551110, 0x506655, 0xD0FFDD, 0xEEFFE0];
+static PAL_GAMEOVER: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
 static MAX_LVL: usize = 8;
@@ -326,15 +427,16 @@ enum Screen {
 }
 
 #[derive(Copy, Clone)]
-struct DifficultySettings {
+struct LVlSettings {
     drone_limit: usize,
     fly_limit: usize,
     slider_limit: usize,
     drone_rte: u16,
-    rain_chance_rte: u8,
-    rain_amount_rte: u8,
+    rain_chance_rte: u16, // Higher is less chance
+    rain_amount_rte: u16, // Higher is less amount
+    gold_amt: usize,
 }
-impl DifficultySettings {
+impl LVlSettings {
     fn new() -> Self {
         Self {
             drone_limit: 0,
@@ -343,76 +445,85 @@ impl DifficultySettings {
             drone_rte: 100,
             rain_chance_rte: 100,
             rain_amount_rte: 200,
+            gold_amt: 10,
         }
     }
 }
 
-const DIFF_LVLS: [DifficultySettings; MAX_LVL] = [
+const LVLS: [LVlSettings; MAX_LVL] = [
     // Zero is not used
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 0,
         fly_limit: 0,
         slider_limit: 0,
         drone_rte: 100,
-        rain_chance_rte: 100,
-        rain_amount_rte: 200,
+        rain_chance_rte: 1000,
+        rain_amount_rte: 1000,
+        gold_amt: 8,
     },
     // This is the first real level
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 0,
         fly_limit: 0,
         slider_limit: 0,
         drone_rte: 100,
-        rain_chance_rte: 100,
-        rain_amount_rte: 200,
+        rain_chance_rte: 1000,
+        rain_amount_rte: 2000,
+        gold_amt: 16,
     },
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 0,
         fly_limit: 3,
         slider_limit: 0,
         drone_rte: 250,
         rain_chance_rte: 100,
         rain_amount_rte: 200,
+        gold_amt: 24,
     },
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 3,
         fly_limit: 4,
         slider_limit: 3,
         drone_rte: 200,
         rain_chance_rte: 80,
         rain_amount_rte: 160,
+        gold_amt: 32,
     },
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 4,
         fly_limit: 5,
         slider_limit: 4,
         drone_rte: 150,
         rain_chance_rte: 70,
         rain_amount_rte: 140,
+        gold_amt: 48,
     },
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 5,
         fly_limit: 6,
         slider_limit: 5,
         drone_rte: 120,
         rain_chance_rte: 60,
         rain_amount_rte: 120,
+        gold_amt: 64,
     },
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 6,
         fly_limit: 7,
         slider_limit: 6,
         drone_rte: 100,
         rain_chance_rte: 50,
         rain_amount_rte: 100,
+        gold_amt: 64,
     },
-    DifficultySettings {
+    LVlSettings {
         drone_limit: 7,
         fly_limit: 8,
         slider_limit: 7,
         drone_rte: 80,
         rain_chance_rte: 40,
         rain_amount_rte: 80,
+        gold_amt: 64,
     },
 ];
 
@@ -433,7 +544,7 @@ struct GameMaster {
     drill_heat_max: u16,
     drill_heat: u16,
     drill_overheat: bool,
-    diff: DifficultySettings,
+    diff: LVlSettings,
     rain_locs: Vec<Pos>,
     drone_locs: Vec<Pos>,
     fly_locs: Vec<Pos>,
@@ -452,9 +563,9 @@ impl GameMaster {
             rng: Rng::new(),
             seed: 0,
             frame: 0,
-            lvl: 0,
+            lvl: 1, // Start at 1
             hp: 8,
-            pos: Pos { x: 76, y: 0 },
+            pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
                 data: Vec::new(),
@@ -465,10 +576,10 @@ impl GameMaster {
             gold_locs: Vec::new(),
             gold_rained: 0,
             gold: 0,
-            drill_heat_max: 100,
+            drill_heat_max: 256,
             drill_heat: 0,
             drill_overheat: false,
-            diff: DifficultySettings::new(),
+            diff: LVlSettings::new(),
             rain_locs: Vec::new(),
             drone_locs: Vec::new(),
             fly_locs: Vec::new(),
@@ -479,7 +590,7 @@ impl GameMaster {
             has_drilled: false,
             has_gold: false,
             is_drilling: false,
-            screen: Screen::Shop,
+            screen: Screen::Start,
         }
     }
     unsafe fn input_check(&mut self, check: u8) -> bool {
@@ -587,7 +698,7 @@ impl GameMaster {
         self.screen = Screen::Shop;
         // Reset game state
         self.frame = 0;
-        self.pos = Pos { x: 76, y: 0 };
+        self.pos = Pos { x: 48, y: 0 };
         self.world = MiniBitVec::new();
         self.exit_loc = Pos { x: 0, y: 0 };
         self.gold_locs.clear();
@@ -670,7 +781,7 @@ impl GameMaster {
             }
         }
         // Generate some random gold locations
-        for _ in 0..GOLD_COUNT {
+        for _ in 0..self.diff.gold_amt {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(24..(WORLD_SIZE as i16));
             self.gold_locs.push(Pos::new(x, y));
@@ -1223,13 +1334,146 @@ impl GameMaster {
 
         // Check for game over
         if self.hp == 0 {
-            // self.screen = Screen::GameOver;
+            self.screen = Screen::GameOver;
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render_start(&mut self) {
+        if GM.screen == Screen::Start {
+            *DRAW_COLORS = 1;
+            rect(0, 0, 160, 160);
+            for x in 0..5 as i32 {
+                for y in 0..8 {
+                    *DRAW_COLORS = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
+                    text("AC", x * 32, y * 20);
+                    *DRAW_COLORS = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
+                    text("RN", x * 32, 10 + y * 20);
+                }
+            }
+            *DRAW_COLORS = 1;
+            for x in 0..5 as i32 {
+                for y in 0..8 {
+                    text("AC", 1 + x * 32, 1 + y * 20);
+                    text("RN", 1 + x * 32, 1 + 10 + y * 20);
+                }
+            }
+            *DRAW_COLORS = 1;
+            for y in 0..80 {
+                hline(0, y * 2, 160);
+            }
+            for i in 0..160 {
+                let sina = (self.frame as f32 / 320.).sin() * 2.0;
+                let sin = ((self.frame as f32 / 10.) + (i as f32 / (4. + sina))).sin();
+                let y = (sin * 8.0 + 140.0) as i32;
+                *DRAW_COLORS = 2;
+                rect(i as i32, y, 1, (160 - y) as u32);
+            }
+            *DRAW_COLORS = 2;
+            text("MATHIEU\nDOMBROCK\n2025", 12, 50);
+            *DRAW_COLORS = 3;
+            text(b"PRESS \x80 TO START", 16, 90);
+            *DRAW_COLORS = 2;
+            let x = 10;
+            let y = 10;
+            blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
+            blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
+            blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
+            blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
+            let x = 12;
+            let y = 12;
+            *DRAW_COLORS = 4;
+            blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
+            blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
+            blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
+            blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
+            blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render_shop(&mut self) {
+        if GM.screen == Screen::Shop {
+            *DRAW_COLORS = 1;
+            rect(0, 0, 160, 160);
+            *DRAW_COLORS = 3;
+            rect(0, 0, 160, 80);
+            *DRAW_COLORS = 1;
+            for x in 0..160 {
+                let sina = (GM.frame as f32 / 320.).sin() * 2.0;
+                let sin = ((GM.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
+                let y = (sin * 8.0 + 32.0) as i32;
+                rect(x as i32, y, 1, (160 - y) as u32);
+            }
+            *DRAW_COLORS = 1;
+            let sy = (self.frame as f32 / 8.).sin() * 2.0;
+            text("UPGRADES!", 50, 6 + sy as i32);
+            self.draw_gold(50, 14 + sy as i32, self.gold);
+            *DRAW_COLORS = 3;
+            vline(115, 45, 80);
+            // Up
+            text(b"\x86HEART PIECE", 12, 50);
+            self.draw_gold(120, 50, 8);
+            text(format!("{}/8", self.hp), 20, 60);
+            // Left
+            text(b"\x84DRILL SPEED", 12, 80);
+            self.draw_gold(120, 80, 32);
+            text(format!("{}/128", self.drill_speed), 20, 90);
+            // Righ
+            text(b"\x85DRILL COOLR", 12, 110);
+            self.draw_gold(120, 110, 32);
+            text(format!("{}/1024", self.drill_heat_max), 20, 120);
+            // Down
+            *DRAW_COLORS = 4;
+            hline(0, 135, 160);
+            text(b"\x87NEXT  LEVEL", 30, 145);
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render_transition(&mut self) {
+        if GM.screen == Screen::Transition {
+            *DRAW_COLORS = 1;
+            rect(0, 0, 160, 160);
+            *DRAW_COLORS = 4;
+            let trans_text = format!("LEVEL {}", self.lvl);
+            text(trans_text, 50, 60);
+        }
+    }
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn render_gameover(&mut self) {
+        if GM.screen == Screen::GameOver {
+            *PALETTE = PAL_GAMEOVER;
+            *DRAW_COLORS = 1;
+            // rect(0, 0, 160, 160);
+            *DRAW_COLORS = 4;
+            let over_text = "GAME OVER";
+            *DRAW_COLORS = 3;
+            text(over_text, 45, 60);
+            *DRAW_COLORS = 4;
+            text(over_text, 46, 61);
+            *DRAW_COLORS = 2;
+            text(GM.gold.to_string(), 10, 80);
         }
     }
 
     #[no_mangle]
     #[allow(static_mut_refs)]
     unsafe fn render(&mut self) {
+        if GM.screen != Screen::Game {
+            return;
+        }
         // If took damage, change palette briefly
         if GM.dmg_frames > 0 {
             *PALETTE = PAL_DMG;
@@ -1428,104 +1672,10 @@ impl GameMaster {
         // Help text
         if GM.has_drilled == false && GM.lvl == 1 {
             *DRAW_COLORS = 1;
-            rect(45, 45, 75, 16);
+            rect(50, 50, 60, 24);
             *DRAW_COLORS = 4;
-            let help_text = "X TO DIG";
-            text(help_text, 50, 50);
-        }
-
-        // Start screen
-        if GM.screen == Screen::Start {
-            *DRAW_COLORS = 1;
-            rect(0, 0, 160, 160);
-            *DRAW_COLORS = 4;
-            let title_text = "ACID\nRAIN";
-            let instr_text = "PRESS\nX\nBUTTON";
-            *DRAW_COLORS = 3;
-            text(title_text, 45, 60);
-            *DRAW_COLORS = 4;
-            text(title_text, 45, 61);
-            *DRAW_COLORS = 2;
-            text(instr_text, 45, 80);
-        }
-        // Game over screen
-        if GM.screen == Screen::GameOver {
-            *DRAW_COLORS = 1;
-            // rect(0, 0, 160, 160);
-            *DRAW_COLORS = 4;
-            let over_text = "GAME OVER";
-            *DRAW_COLORS = 3;
-            text(over_text, 45, 60);
-            *DRAW_COLORS = 4;
-            text(over_text, 46, 61);
-            *DRAW_COLORS = 2;
-            text(GM.gold.to_string(), 10, 80);
-        }
-        // Shop screen
-        if GM.screen == Screen::Shop {
-            *DRAW_COLORS = 1;
-            rect(0, 0, 160, 160);
-            *DRAW_COLORS = 3;
-            rect(0, 0, 160, 80);
-            *DRAW_COLORS = 1;
-            for x in 0..160 {
-                let sina = (GM.frame as f32 / 320.).sin() * 2.0;
-                let sin = ((GM.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
-                let y = (sin * 8.0 + 32.0) as i32;
-                rect(x as i32, y, 1, (160 - y) as u32);
-            }
-            *DRAW_COLORS = 1;
-            let sy = (self.frame as f32 / 8.).sin() * 2.0;
-            text("UPGRADES!", 50, 6 + sy as i32);
-            self.draw_gold(50, 14 + sy as i32, self.gold);
-            *DRAW_COLORS = 3;
-            vline(115, 45, 80);
-            // Up
-            text(b"\x86HEART PIECE", 12, 50);
-            self.draw_gold(120, 50, 8);
-            text(format!("{}/8", self.hp), 20, 60);
-            // Left
-            text(b"\x84DRILL SPEED", 12, 80);
-            self.draw_gold(120, 80, 32);
-            text(format!("{}/128", self.drill_speed), 20, 90);
-            // Righ
-            text(b"\x85DRILL COOLR", 12, 110);
-            self.draw_gold(120, 110, 32);
-            text(format!("{}/1024", self.drill_heat_max), 20, 120);
-            // Down
-            *DRAW_COLORS = 4;
-            hline(0, 135, 160);
-            text(b"\x87NEXT  LEVEL", 30, 145);
-        }
-        // Transition screen
-        if GM.screen == Screen::Transition {
-            *DRAW_COLORS = 1;
-            rect(0, 0, 160, 160);
-            *DRAW_COLORS = 4;
-            let trans_text = format!("LEVEL {}", self.lvl);
-            text(trans_text, 50, 60);
-        }
-
-        // Debug
-        if DEBUG {
-            let dbg_string = format!(
-                "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
-                self.frame,
-                self.drone_locs.len(),
-                self.fly_locs.len(),
-                self.slider_locs.len(),
-                self.rain_locs.len()
-            );
-            text(dbg_string.as_str(), 100, 120);
-            let psize = std::mem::size_of::<Pos>();
-            let mut size = 0;
-            size += self.drone_locs.capacity() * psize;
-            size += self.fly_locs.capacity() * psize;
-            size += self.slider_locs.capacity() * psize;
-            size += self.world.data.capacity();
-            size += self.rain_locs.capacity() * psize;
-            text(&format!("MEM: {} B", size), 4, 20);
-            (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
+            let help_text = b"\x84\x85\x87+\x80\nTO DIG";
+            text(help_text, 57, 53);
         }
     }
 }
@@ -1542,19 +1692,22 @@ unsafe fn start() {
 #[no_mangle]
 #[allow(static_mut_refs)]
 unsafe fn update() {
+    // TODO: Frame inc can prob happen everywhere
     // UPDATE
     if GM.screen == Screen::Start {
         GM.seed += 1; // Increment seed while on start screen
         if GM.input_check_any() {
             // Seed random with current frame
             GM.rng = Rng::with_seed(GM.seed);
+            GM.no_input_frames = NO_INPUT_FRAMES;
             GM.screen = Screen::Transition;
         }
+        GM.frame += 1;
     } else if GM.screen == Screen::Game {
         GM.main_logic();
         GM.frame += 1;
     } else if GM.screen == Screen::GameOver {
-        *PALETTE = PAL_GAMEOVER;
+        // *PALETTE = PAL_GAMEOVER;
     } else if GM.screen == Screen::Shop {
         if GM.input_check_any() {
             GM.no_input_frames = NO_INPUT_FRAMES;
@@ -1568,7 +1721,7 @@ unsafe fn update() {
     } else if GM.screen == Screen::Transition {
         if GM.input_check_any() {
             GM.world_reset(false);
-            GM.diff = DIFF_LVLS[GM.lvl];
+            GM.diff = LVLS[GM.lvl];
             GM.gen_world();
             GM.screen = Screen::Game;
         }
@@ -1577,4 +1730,34 @@ unsafe fn update() {
 
     // DRAW
     GM.render();
+    // NOTE: Other screens only render if active
+    // Start screen
+    GM.render_start();
+    // Game over screen
+    GM.render_gameover();
+    // Shop screen
+    GM.render_shop();
+    // Transition screen
+    GM.render_transition();
+    // Debug
+    if DEBUG {
+        let dbg_string = format!(
+            "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
+            GM.frame,
+            GM.drone_locs.len(),
+            GM.fly_locs.len(),
+            GM.slider_locs.len(),
+            GM.rain_locs.len()
+        );
+        text(dbg_string.as_str(), 100, 120);
+        let psize = std::mem::size_of::<Pos>();
+        let mut size = 0;
+        size += GM.drone_locs.capacity() * psize;
+        size += GM.fly_locs.capacity() * psize;
+        size += GM.slider_locs.capacity() * psize;
+        size += GM.world.data.capacity();
+        size += GM.rain_locs.capacity() * psize;
+        text(&format!("MEM: {} B", size), 4, 20);
+        (80, 0, GM.pos.x as i32 + 4, GM.pos.y as i32);
+    }
 }
