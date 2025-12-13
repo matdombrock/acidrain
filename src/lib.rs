@@ -786,7 +786,7 @@ impl GameMaster {
     unsafe fn sfx_dig(&mut self) {
         let max = 440 - self.pos.y as u32 * 2; // 160
         let f = self.rng.u32(120..max);
-        tone(f, 0, 50, TONE_NOISE);
+        tone(f, 0, 75, TONE_NOISE);
     }
 
     #[allow(static_mut_refs)]
