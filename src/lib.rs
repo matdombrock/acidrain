@@ -650,15 +650,19 @@ impl GameMaster {
             return;
         }
 
+        let mut sfx = false;
         for dy in 0..h {
             for dx in 0..w {
                 let wx = x + dx;
                 let wy = y + dy;
                 if self.rng.i32(0..128) < chance as i32 {
                     self.world_set(wx, wy, false);
-                    self.sfx_dig();
+                    sfx = true;
                 }
             }
+        }
+        if sfx {
+            self.sfx_dig();
         }
     }
     unsafe fn player_collide_world(&mut self, cache: Pos) -> bool {
@@ -1315,6 +1319,8 @@ impl GameMaster {
         let world_offset = (self.frame % split_size as u32) as usize;
         let start_y = world_offset * world_split;
         let end_y = start_y + world_split;
+        // TODO: to_fall holds a position
+        // It could just hold an index to save memory
         let mut to_fall = Vec::new();
         for y in (start_y..end_y).rev() {
             for x in 1..WORLD_SIZE - 1 {
