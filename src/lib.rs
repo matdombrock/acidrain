@@ -222,34 +222,34 @@ const LOGO_A: [u8; 32] = [
     0b00000011, 0b11000000,
     0b00000011, 0b11000000,
     0b00000011, 0b11000000,
-    0b00000011, 0b11000000,
-    0b10000011, 0b11000001,
+    0b00010011, 0b11000100,
+    0b10010011, 0b11010101,
 ];
 #[rustfmt::skip]
 const LOGO_C: [u8; 32] = [
     0b11000000, 0b00000001,
     0b10000000, 0b00000000,
     0b10000000, 0b00000000,
-    0b10000000, 0b00000000,
+    0b00000000, 0b00000000,
     0b10000000, 0b00000000,
     0b10000011, 0b11110000,
     0b10000011, 0b11110000,
+    0b00000011, 0b11111111,
     0b10000011, 0b11111111,
-    0b10000011, 0b11111111,
     0b10000011, 0b11110000,
     0b10000011, 0b11110000,
     0b10000000, 0b00000000,
     0b10000000, 0b00000000,
     0b10000000, 0b00000000,
-    0b10000000, 0b00000000,
-    0b11000000, 0b00000001,
+    0b00000000, 0b00001000,
+    0b11001000, 0b10011001,
 ];
 #[rustfmt::skip]
 const LOGO_I: [u8; 32] = [
+    0b11000000, 0b00000011,
     0b10000000, 0b00000001,
-    0b00000000, 0b00000000,
-    0b00000000, 0b00000000,
-    0b10000000, 0b00000001,
+    0b10000000, 0b00000000,
+    0b00000000, 0b00000001,
     0b00000000, 0b00000000,
     0b10000000, 0b00000001,
     0b11111000, 0b00011111,
@@ -259,17 +259,17 @@ const LOGO_I: [u8; 32] = [
     0b11111000, 0b00011111,
     0b10000000, 0b00000001,
     0b00000000, 0b00000000,
-    0b00000000, 0b00000000,
-    0b00000000, 0b00000000,
-    0b10000000, 0b00000001,
+    0b00000000, 0b00000001,
+    0b10000001, 0b00001000,
+    0b11010011, 0b01001011,
 ];
 #[rustfmt::skip]
 const LOGO_D: [u8; 32] = [
     0b10000000, 0b00000001,
     0b11000000, 0b00000000,
+    0b00000000, 0b00000000,
     0b10000000, 0b00000000,
-    0b10000000, 0b00000000,
-    0b10000000, 0b00000000,
+    0b00000000, 0b00000000,
     0b10000000, 0b00000000,
     0b10000001, 0b11111000,
     0b10000001, 0b11111000,
@@ -277,10 +277,10 @@ const LOGO_D: [u8; 32] = [
     0b10000001, 0b11111000,
     0b10000001, 0b11111000,
     0b10000000, 0b00000000,
+    0b00000000, 0b00000000,
     0b10000000, 0b00000000,
-    0b10000000, 0b00000000,
-    0b10000000, 0b00000000,
-    0b11000000, 0b00000001,
+    0b00000000, 0b10000000,
+    0b11001000, 0b11001001,
 ];
 #[rustfmt::skip]
 const LOGO_R: [u8; 32] = [
@@ -288,18 +288,18 @@ const LOGO_R: [u8; 32] = [
     0b01000000, 0b00000001,
     0b00000000, 0b00000001,
     0b00000000, 0b11110001,
-    0b00000000, 0b11110001,
+    0b00000000, 0b11110000,
     0b00000000, 0b00000001,
     0b00000000, 0b00000001,
-    0b00000000, 0b00000001,
+    0b00000000, 0b00000000,
     0b00000000, 0b00000001,
     0b00000000, 0b00000011,
     0b00000000, 0b00000001,
     0b00000000, 0b11000001,
+    0b00000000, 0b11000000,
     0b00000000, 0b11000001,
-    0b00000000, 0b11000001,
-    0b00000000, 0b11000001,
-    0b10000000, 0b11000001,
+    0b01001000, 0b11000100,
+    0b10001100, 0b11000101,
 ];
 #[rustfmt::skip]
 const LOGO_N: [u8; 32] = [
@@ -317,8 +317,8 @@ const LOGO_N: [u8; 32] = [
     0b00000001, 0b11000000,
     0b00000001, 0b11000000,
     0b00000001, 0b11000000,
-    0b00000001, 0b11000000,
-    0b10000001, 0b11000000,
+    0b00001001, 0b11010000,
+    0b10101001, 0b11010010,
 ];
 static DEBUG: bool = false;
 static WORLD_SIZE: usize = 160;
@@ -330,6 +330,7 @@ static PAL_GAMEOVER: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
 static MAX_LVL: usize = 8;
+static DIRT_START: u8 = 24;
 
 pub struct MiniBitVec {
     data: Vec<u8>,
@@ -388,6 +389,8 @@ impl MiniBitVec {
 }
 
 #[derive(Copy, Clone)]
+// NOTE: Cant use unsigned because we need negative
+// Cant use i8 because 160x160
 struct Pos {
     x: i16,
     y: i16,
@@ -465,7 +468,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
     // This is the first real level
     LVlSettings {
         drone_limit: 0,
-        fly_limit: 0,
+        fly_limit: 2,
         slider_limit: 0,
         drone_rte: 100,
         rain_chance_rte: 400,
@@ -617,10 +620,96 @@ impl GameMaster {
         gamepad != 0
     }
 
+    #[allow(static_mut_refs)]
+    // TODO: This is a little hacky
+    // It should just use new and cache saved values
+    unsafe fn world_reset(&mut self, full: bool) {
+        // Block input for N frames
+        self.no_input_frames = 0;
+        self.screen = Screen::Shop;
+        // Reset game state
+        self.frame = 0;
+        self.pos = Pos { x: 48, y: 0 };
+        self.world = MiniBitVec::new();
+        self.exit_loc = Pos { x: 0, y: 0 };
+        self.gold_locs.clear();
+        self.gold_rained = 0;
+        self.rain_locs.clear();
+        self.player_flags_last = BLIT_1BPP;
+        self.dmg_frames = 0;
+        self.has_gold = false;
+        self.is_drilling = false;
+        self.dir = 0;
+        self.drone_locs.clear();
+        self.fly_locs.clear();
+        self.slider_locs.clear();
+        self.drill_heat = 0;
+        self.drill_overheat = false;
+        if full {
+            // Unused and not up to date
+            self.screen = Screen::Start;
+            self.gold = 0;
+            self.hp = 10;
+            self.seed = 0;
+            self.has_drilled = false;
+            self.drill_heat_max = 100;
+        }
+    }
+
+    #[no_mangle]
+    #[allow(static_mut_refs)]
+    unsafe fn world_gen(&mut self) {
+        self.world = MiniBitVec::new();
+        trace("World");
+        for y in 0..WORLD_SIZE {
+            for _ in 0..WORLD_SIZE {
+                let mut alive = y >= DIRT_START as usize;
+                if self.rng.i32(0..100) < 2 {
+                    alive = false;
+                }
+                self.world.push(alive);
+            }
+        }
+        // Generate some random gold locations
+        trace("Gold");
+        for _ in 0..self.diff.gold_amt {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+            self.gold_locs.push(Pos::new(x, y));
+        }
+        // Exit location
+        trace("Exit");
+        let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
+        trace(format!("Exit: {}", exit_x));
+        self.exit_loc = Pos::new(exit_x, 152);
+        self.world_set_area(
+            (self.exit_loc.x - 4) as usize,
+            (self.exit_loc.y - 2) as usize,
+            16,
+            12,
+            false,
+        );
+        // Fly locations
+        trace("Flies");
+        for _ in 0..self.diff.fly_limit {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16 - 1));
+            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+            self.fly_locs.push(Pos::new(x, y));
+        }
+        // Slider locations
+        trace("Sliders");
+        for _ in 0..self.diff.slider_limit {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+            self.slider_locs.push(Pos::new(x, y));
+        }
+    }
+
     fn world_get(&self, x: usize, y: usize) -> Option<bool> {
         let index = y * WORLD_SIZE + x;
         self.world.get(index)
     }
+
     fn world_set(&mut self, x: usize, y: usize, value: bool) {
         let index = y * WORLD_SIZE + x;
         // Clamp to world size
@@ -630,17 +719,20 @@ impl GameMaster {
 
         self.world.set(index, value);
     }
+
     fn world_set_area(&mut self, x: usize, y: usize, w: usize, h: usize, value: bool) {
         for dy in 0..h {
             for dx in 0..w {
                 let wx = x + dx;
                 let wy = y + dy;
-                if wx < WORLD_SIZE - 1 && wy < WORLD_SIZE - 1 {
+                // TODO: Might not need -1
+                if wx < WORLD_SIZE && wy < WORLD_SIZE {
                     self.world_set(wx, wy, value);
                 }
             }
         }
     }
+
     unsafe fn drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
         // Prevent overflow and out-of-bounds
         if x.checked_add(w).map_or(true, |end_x| end_x > WORLD_SIZE)
@@ -666,6 +758,7 @@ impl GameMaster {
             self.sfx_dig();
         }
     }
+
     unsafe fn player_collide_world(&mut self, cache: Pos) -> bool {
         // Collision with world
         let mut collided = false;
@@ -730,6 +823,7 @@ impl GameMaster {
             }
         }
     }
+
     unsafe fn player_wrap(&mut self) {
         if self.pos.x < 0 {
             self.pos.x = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
@@ -738,42 +832,6 @@ impl GameMaster {
         if self.pos.x > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
             self.pos.x = 0;
             self.clear_at_player();
-        }
-    }
-
-    #[allow(static_mut_refs)]
-    // TODO: This is a little hacky
-    // It should just use new and cache saved values
-    unsafe fn world_reset(&mut self, full: bool) {
-        // Block input for N frames
-        self.no_input_frames = 0;
-        self.screen = Screen::Shop;
-        // Reset game state
-        self.frame = 0;
-        self.pos = Pos { x: 48, y: 0 };
-        self.world = MiniBitVec::new();
-        self.exit_loc = Pos { x: 0, y: 0 };
-        self.gold_locs.clear();
-        self.gold_rained = 0;
-        self.rain_locs.clear();
-        self.player_flags_last = BLIT_1BPP;
-        self.dmg_frames = 0;
-        self.has_gold = false;
-        self.is_drilling = false;
-        self.dir = 0;
-        self.drone_locs.clear();
-        self.fly_locs.clear();
-        self.slider_locs.clear();
-        self.drill_heat = 0;
-        self.drill_overheat = false;
-        if full {
-            // Unused and not up to date
-            self.screen = Screen::Start;
-            self.gold = 0;
-            self.hp = 10;
-            self.seed = 0;
-            self.has_drilled = false;
-            self.drill_heat_max = 100;
         }
     }
 
@@ -832,49 +890,6 @@ impl GameMaster {
     #[allow(static_mut_refs)]
     unsafe fn sfx_deny(&mut self) {
         tone(400, 2, 128, TONE_TRIANGLE);
-    }
-
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn gen_world(&mut self) {
-        self.world = MiniBitVec::new();
-        for y in 0..WORLD_SIZE {
-            for _ in 0..WORLD_SIZE {
-                let mut alive = y >= 24;
-                if self.rng.i32(0..100) < 2 {
-                    alive = false;
-                }
-                self.world.push(alive);
-            }
-        }
-        // Generate some random gold locations
-        for _ in 0..self.diff.gold_amt {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16));
-            let y = self.rng.i16(24..(WORLD_SIZE as i16));
-            self.gold_locs.push(Pos::new(x, y));
-        }
-        // Exit location
-        let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
-        self.exit_loc = Pos::new(exit_x, 152);
-        self.world_set_area(
-            (self.exit_loc.x - 4) as usize,
-            (self.exit_loc.y - 2) as usize,
-            16,
-            12,
-            false,
-        );
-        // Fly locations
-        for _ in 0..self.diff.fly_limit {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16));
-            let y = self.rng.i16(24..(WORLD_SIZE as i16));
-            self.fly_locs.push(Pos::new(x, y));
-        }
-        // Slider locations
-        for _ in 0..self.diff.slider_limit {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16));
-            let y = self.rng.i16(24..(WORLD_SIZE as i16));
-            self.slider_locs.push(Pos::new(x, y));
-        }
     }
 
     #[no_mangle]
@@ -1875,7 +1890,8 @@ unsafe fn update() {
         GM.seed += 1; // Increment seed while on start screen
         if GM.input_check_any() {
             // Seed random with current frame
-            GM.rng = Rng::with_seed(GM.seed);
+            GM.rng = Rng::with_seed(45);
+            trace(format!("set seed: {}", GM.seed));
             GM.no_input_frames = NO_INPUT_FRAMES;
             GM.screen = Screen::Transition;
         }
@@ -1892,7 +1908,7 @@ unsafe fn update() {
         if GM.input_check_any() {
             GM.world_reset(false);
             GM.diff = LVLS[GM.lvl];
-            GM.gen_world();
+            GM.world_gen();
             GM.screen = Screen::Game;
         }
     }
