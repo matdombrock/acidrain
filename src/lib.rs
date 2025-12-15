@@ -361,20 +361,21 @@ impl MiniBitVec {
     }
 
     pub fn get(&self, index: usize) -> Option<bool> {
-        if index >= self.len {
+        let byte_index = index / 8;
+        if byte_index >= self.data.len() {
             return None;
         }
-        let byte_index = index / 8;
         let bit_index = index % 8;
         let byte = self.data[byte_index];
         Some((byte & (1 << bit_index)) != 0)
     }
 
     pub fn set(&mut self, index: usize, value: bool) {
-        if index >= self.len {
+        trace(format!("Set bit {} to {}", index, value));
+        let byte_index = index / 8;
+        if byte_index >= self.data.len() {
             return;
         }
-        let byte_index = index / 8;
         let bit_index = index % 8;
         if value {
             self.data[byte_index] |= 1 << bit_index;
@@ -382,9 +383,8 @@ impl MiniBitVec {
             self.data[byte_index] &= !(1 << bit_index);
         }
     }
-
-    pub fn len(&self) -> usize {
-        self.len
+    pub fn len_bits(&self) -> usize {
+        self.len * 8
     }
 }
 
@@ -683,8 +683,8 @@ impl GameMaster {
         trace(format!("Exit: {}", exit_x));
         self.exit_loc = Pos::new(exit_x, 152);
         self.world_set_area(
-            (self.exit_loc.x - 4) as usize,
-            (self.exit_loc.y - 2) as usize,
+            (self.exit_loc.x as usize).saturating_sub(4),
+            self.exit_loc.y as usize,
             16,
             12,
             false,
@@ -706,17 +706,12 @@ impl GameMaster {
     }
 
     fn world_get(&self, x: usize, y: usize) -> Option<bool> {
-        let index = y * WORLD_SIZE + x;
+        let index = WORLD_SIZE.saturating_mul(y).saturating_add(x);
         self.world.get(index)
     }
 
     fn world_set(&mut self, x: usize, y: usize, value: bool) {
-        let index = y * WORLD_SIZE + x;
-        // Clamp to world size
-        if index >= self.world.len() {
-            return;
-        }
-
+        let index = WORLD_SIZE.saturating_mul(y).saturating_add(x);
         self.world.set(index, value);
     }
 
@@ -725,10 +720,7 @@ impl GameMaster {
             for dx in 0..w {
                 let wx = x + dx;
                 let wy = y + dy;
-                // TODO: Might not need -1
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    self.world_set(wx, wy, value);
-                }
+                self.world_set(wx, wy, value);
             }
         }
     }
