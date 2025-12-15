@@ -393,6 +393,21 @@ static MAX_LVL: usize = 8;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = false;
 
+const TIPS: [&[u8]; MAX_LVL] = [
+    b"ZERO ISNT REAL",
+    b"\x84\x87\x85
+MOVE
+\x84\x87\x85+\x80
+DRILL",
+    b"Hold A to\n
+    drill downwards!",
+    b"Drill sideways",
+    b"Drill sideways",
+    b"Drill sideways",
+    b"Drill sideways",
+    b"Drill sideways",
+];
+
 pub struct MiniBitVec {
     data: Vec<u8>,
     len: usize,
@@ -1451,6 +1466,12 @@ impl GameMaster {
                     gold.clamp_to_world();
                 }
             }
+            // Clear world blocks where gold is
+            let gold_positions: Vec<_> =
+                self.gold_locs.iter().map(|gold| (gold.x, gold.y)).collect();
+            for (x, y) in gold_positions {
+                self.world_set_area(x as usize, y as usize, 4, 4, false);
+            }
         }
     }
 
@@ -1575,6 +1596,13 @@ impl GameMaster {
         if self.screen != Screen::Transition {
             return;
         }
+        // if self.no_input_frames == 0 {
+        //     self.world_reset();
+        //     self.cur_lvl_data = LVLS[self.lvl];
+        //     self.cur_lvl_data.apply_difficulty(self.difficulty);
+        //     self.world_gen();
+        //     self.screen_set(Screen::Game);
+        // }
         if self.input_check_any() {
             self.world_reset();
             self.cur_lvl_data = LVLS[self.lvl];
@@ -1820,14 +1848,8 @@ impl GameMaster {
             text(trans_text, 50, 60);
             self.colors_set(2);
             vline(30, 0, 160);
-            if self.lvl <= 1 {
-                self.colors_set(2);
-                text(b"\x84\x87\x85", 50, 90);
-                text("MOVE", 50, 100);
-                text(b"\x84\x87\x85+\x80", 50, 110);
-                text("DRILL", 50, 120);
-                // text(b"\x84\x87\x85+\x81 SUPER DRILL", 16, 110);
-            }
+            self.colors_set(2);
+            text(TIPS[self.lvl as usize], 50, 90);
         }
     }
 
