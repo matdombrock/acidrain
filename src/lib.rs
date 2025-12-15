@@ -320,9 +320,8 @@ const LOGO_N: [u8; 32] = [
     0b00001001, 0b11010000,
     0b10101001, 0b11010010,
 ];
-static PAL: [u32; 4] = [0x001110, 0x506655, 0xD0FFDD, 0xEEFFE0];
-static PAL_DMG: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
-static PAL_GAMEOVER: [u32; 4] = [0x221111, 0x551111, 0xDD1111, 0xFF1111];
+static PAL: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5];
+static PAL_DMG: [u32; 4] = [0x221111, 0x551111, 0xDD1111, 0xFF1111];
 static DEBUG: bool = false;
 static WORLD_SIZE: usize = 160;
 static PLAYER_SIZE: u8 = 8;
@@ -581,7 +580,7 @@ impl GameMaster {
             seed: 0,
             frame: 0,
             lvl: 1,
-            hp: 1,
+            hp: 8,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
@@ -605,13 +604,13 @@ impl GameMaster {
             no_input_frames: 0,
             has_drilled: false,
             is_drilling: false,
-            screen: Screen::Start,
+            screen: Screen::Transition,
             cost_heart: 8,
             cost_drill_speed: 16,
             cost_drill_cool: 16,
             purchased: 0, // None, shop, drill speed, drill cool
             auto_drill: true,
-            difficulty: 2,
+            difficulty: 1,
             gameover_acc: 0,
         }
     }
@@ -882,7 +881,7 @@ impl GameMaster {
             && self.player_pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
         if door_collide {
             // Win the game (reset for now)
-            self.screen = Screen::Shop;
+            self.screen_set(Screen::Shop);
             self.no_input_frames = NO_INPUT_FRAMES;
             return;
         }
@@ -929,7 +928,7 @@ impl GameMaster {
 
     fn sfx_dmg(&mut self) {
         let f = self.rng.u32(200..220);
-        tone(f, 4, 128, TONE_PULSE1);
+        tone(f * 2 | (f << 16), 8, 128, TONE_PULSE1);
     }
 
     fn sfx_drill_overheat(&mut self) {
@@ -946,6 +945,10 @@ impl GameMaster {
 
     fn sfx_deny(&mut self) {
         tone(400, 2, 128, TONE_TRIANGLE);
+    }
+
+    fn sfx_screen_change(&mut self) {
+        tone(166 | (220 << 16), 8, 128, TONE_PULSE2);
     }
 
     fn update_drill(&mut self) {
@@ -1327,85 +1330,6 @@ impl GameMaster {
         }
     }
 
-    fn update_main(&mut self) {
-        self.input_main();
-        self.player_collide_misc();
-
-        self.update_drill();
-
-        self.update_rain();
-        self.update_drones();
-        self.update_flies();
-        self.update_sliders();
-        self.update_world();
-
-        // Check for game over
-        if self.hp == 0 {
-            self.gameover_acc += 1;
-            self.no_input_frames = NO_INPUT_FRAMES;
-            if self.gameover_acc > 120 {
-                self.gameover_acc = 120;
-                self.screen = Screen::GameOver;
-            }
-        }
-    }
-
-    fn update_shop(&mut self) {
-        fn cont(gm: &mut GameMaster) {
-            gm.lvl += 1;
-            gm.no_input_frames = NO_INPUT_FRAMES;
-            gm.screen = Screen::Transition;
-        }
-        // Check if we just completed the last level
-        if self.lvl >= MAX_LVL - 1 {
-            self.screen = Screen::GameOver;
-            return;
-        }
-        if self.purchased > 0 && self.input_check_any() {
-            self.purchased = 0;
-            self.no_input_frames = NO_INPUT_FRAMES;
-        }
-        if self.input_check(BUTTON_UP) {
-            // Buy heart piece
-            self.no_input_frames = NO_INPUT_FRAMES;
-            if self.gold >= self.cost_heart && self.hp < 8 {
-                self.gold = self.gold.saturating_sub(self.cost_heart);
-                self.hp += 1;
-                self.purchased = 1;
-                self.sfx_buy();
-            } else {
-                self.sfx_deny();
-                self.dmg_frames = DMG_FRAMES;
-            }
-        } else if self.input_check(BUTTON_LEFT) {
-            // Buy drill speed
-            self.no_input_frames = NO_INPUT_FRAMES;
-            if self.gold >= self.cost_drill_speed && self.drill_speed < 128 {
-                self.gold = self.gold.saturating_sub(self.cost_drill_speed);
-                self.drill_speed += 8;
-                self.purchased = 2;
-                self.sfx_buy();
-            } else {
-                self.sfx_deny();
-                self.dmg_frames = DMG_FRAMES;
-            }
-        } else if self.input_check(BUTTON_RIGHT) {
-            // Buy drill cooling
-            self.no_input_frames = NO_INPUT_FRAMES;
-            if self.gold >= self.cost_drill_cool && self.drill_heat_max < 1024 {
-                self.gold = self.gold.saturating_sub(self.cost_drill_cool);
-                self.drill_heat_max += 64;
-                self.purchased = 3;
-                self.sfx_buy();
-            } else {
-                self.sfx_deny();
-                self.dmg_frames = DMG_FRAMES;
-            }
-        } else if self.input_check(BUTTON_DOWN) {
-            cont(self);
-        }
-    }
-
     fn update_music(&mut self) {
         if !MUSIC_ENABLED {
             return;
@@ -1466,6 +1390,135 @@ impl GameMaster {
             28 => p2(70 - 12, 80),
             31 => p2(68 - 12, 80),
             _ => p2(0, 0),
+        }
+    }
+
+    fn screen_set(&mut self, screen: Screen) {
+        self.frame = 0;
+        self.sfx_screen_change();
+        self.screen = screen;
+    }
+
+    fn screen_start(&mut self) {
+        if self.screen != Screen::Start {
+            return;
+        }
+        self.seed += 1; // Increment seed while on start screen
+        if self.input_check_any() {
+            // Seed random with current frame
+            self.rng = Rng::with_seed(45);
+            trace(format!("set seed: {}", self.seed));
+            self.no_input_frames = NO_INPUT_FRAMES;
+            self.screen_set(Screen::Transition);
+        }
+    }
+
+    fn screen_main(&mut self) {
+        if self.screen != Screen::Game {
+            return;
+        }
+        self.input_main();
+        self.player_collide_misc();
+
+        self.update_drill();
+
+        self.update_rain();
+        self.update_drones();
+        self.update_flies();
+        self.update_sliders();
+        self.update_world();
+
+        // Check for game over
+        if self.hp == 0 {
+            self.gameover_acc += 1;
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gameover_acc > 120 {
+                self.gameover_acc = 120;
+                self.screen_set(Screen::GameOver);
+            }
+        }
+    }
+
+    fn screen_transition(&mut self) {
+        if self.screen != Screen::Transition {
+            return;
+        }
+        if self.input_check_any() {
+            self.world_reset();
+            self.cur_lvl_data = LVLS[self.lvl];
+            self.cur_lvl_data.apply_difficulty(self.difficulty);
+            self.world_gen();
+            self.screen_set(Screen::Game);
+        }
+    }
+
+    fn screen_shop(&mut self) {
+        if self.screen != Screen::Shop {
+            return;
+        }
+        fn cont(gm: &mut GameMaster) {
+            gm.lvl += 1;
+            gm.no_input_frames = NO_INPUT_FRAMES;
+            gm.screen_set(Screen::Transition);
+        }
+        // Check if we just completed the last level
+        if self.lvl >= MAX_LVL - 1 {
+            self.screen_set(Screen::GameOver);
+            return;
+        }
+        if self.purchased > 0 && self.input_check_any() {
+            self.purchased = 0;
+            self.no_input_frames = NO_INPUT_FRAMES;
+        }
+        if self.input_check(BUTTON_UP) {
+            // Buy heart piece
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gold >= self.cost_heart && self.hp < 8 {
+                self.gold = self.gold.saturating_sub(self.cost_heart);
+                self.hp += 1;
+                self.purchased = 1;
+                self.sfx_buy();
+            } else {
+                self.sfx_deny();
+                self.dmg_frames = DMG_FRAMES;
+            }
+        } else if self.input_check(BUTTON_LEFT) {
+            // Buy drill speed
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gold >= self.cost_drill_speed && self.drill_speed < 128 {
+                self.gold = self.gold.saturating_sub(self.cost_drill_speed);
+                self.drill_speed += 8;
+                self.purchased = 2;
+                self.sfx_buy();
+            } else {
+                self.sfx_deny();
+                self.dmg_frames = DMG_FRAMES;
+            }
+        } else if self.input_check(BUTTON_RIGHT) {
+            // Buy drill cooling
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gold >= self.cost_drill_cool && self.drill_heat_max < 1024 {
+                self.gold = self.gold.saturating_sub(self.cost_drill_cool);
+                self.drill_heat_max += 64;
+                self.purchased = 3;
+                self.sfx_buy();
+            } else {
+                self.sfx_deny();
+                self.dmg_frames = DMG_FRAMES;
+            }
+        } else if self.input_check(BUTTON_DOWN) {
+            cont(self);
+        }
+    }
+
+    fn screen_gameover(&mut self) {
+        if self.screen != Screen::GameOver {
+            return;
+        }
+        if self.input_check_any() {
+            *self = GameMaster::new();
+            self.no_input_frames = NO_INPUT_FRAMES;
+            return;
         }
     }
 
@@ -1552,6 +1605,14 @@ impl GameMaster {
             blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
             blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
             blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
+            //
+            self.colors_set(3);
+            text(b"\x86BABY", 85, 20);
+            text(b"\x85EZDRILL", 85, 30);
+            text(b"\x87ARCADE", 85, 40);
+            //
+            self.colors_set(1);
+            text("VERSION 1.0", 70, 150);
         }
     }
 
@@ -1625,13 +1686,23 @@ impl GameMaster {
             self.colors_set(4);
             let trans_text = format!("LEVEL {}", self.lvl);
             text(trans_text, 50, 60);
+            self.colors_set(2);
+            vline(30, 0, 160);
+            if self.lvl <= 1 {
+                self.colors_set(2);
+                text(b"\x84\x87\x85", 50, 90);
+                text("MOVE", 50, 100);
+                text(b"\x84\x87\x85+\x80", 50, 110);
+                text("DRILL", 50, 120);
+                // text(b"\x84\x87\x85+\x81 SUPER DRILL", 16, 110);
+            }
         }
     }
 
     fn render_gameover(&mut self) {
         if self.screen == Screen::GameOver {
             let won = self.lvl == MAX_LVL - 1;
-            self.palette_set(PAL_GAMEOVER);
+            self.palette_set(PAL_DMG);
             self.colors_set(1);
             rect(0, 0, 160, 160);
             self.colors_set(4);
@@ -1652,7 +1723,7 @@ impl GameMaster {
             self.palette_set(PAL_DMG);
             self.dmg_frames -= 1;
         } else if self.gameover_acc > 0 {
-            self.palette_set(PAL_GAMEOVER);
+            self.palette_set(PAL_DMG);
         } else {
             self.palette_set(PAL);
         }
@@ -1866,40 +1937,13 @@ impl GameMaster {
 
     // TODO: Frame inc can happen everywhere?
     fn update(&mut self) {
-        if self.screen == Screen::Start {
-            self.seed += 1; // Increment seed while on start screen
-            if self.input_check_any() {
-                // Seed random with current frame
-                self.rng = Rng::with_seed(45);
-                trace(format!("set seed: {}", self.seed));
-                self.no_input_frames = NO_INPUT_FRAMES;
-                self.screen = Screen::Transition;
-            }
-            self.frame += 1;
-        } else if self.screen == Screen::Game {
-            self.update_main();
-            self.frame += 1;
-        } else if self.screen == Screen::GameOver {
-            // *PALETTE = PAL_GAMEOVER;
-            if self.input_check_any() {
-                *self = GameMaster::new();
-                self.no_input_frames = NO_INPUT_FRAMES;
-                return;
-            }
-        } else if self.screen == Screen::Shop {
-            self.update_shop();
-            self.frame += 1;
-        } else if self.screen == Screen::Transition {
-            if self.input_check_any() {
-                self.world_reset();
-                self.cur_lvl_data = LVLS[self.lvl];
-                self.cur_lvl_data.apply_difficulty(self.difficulty);
-                self.world_gen();
-                self.screen = Screen::Game;
-            }
-        }
-        // Music
+        self.screen_start();
+        self.screen_main();
+        self.screen_gameover();
+        self.screen_shop();
+        self.screen_transition();
         self.update_music();
+        self.frame += 1;
         // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
 
