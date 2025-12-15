@@ -605,25 +605,24 @@ impl GameMaster {
             purchased: 0, // None, shop, drill speed, drill cool
         }
     }
-    unsafe fn input_check(&mut self, check: u8) -> bool {
+    fn input_check(&mut self, check: u8) -> bool {
         if self.no_input_frames > 0 {
             return false;
         }
-        let gamepad = *GAMEPAD1;
+        let gamepad = unsafe { *GAMEPAD1 };
         (gamepad & check) != 0
     }
-    unsafe fn input_check_any(&mut self) -> bool {
+    fn input_check_any(&mut self) -> bool {
         if self.no_input_frames > 0 {
             return false;
         }
-        let gamepad = *GAMEPAD1;
+        let gamepad = unsafe { *GAMEPAD1 };
         gamepad != 0
     }
 
-    #[allow(static_mut_refs)]
     // TODO: This is a little hacky
     // It should just use new and cache saved values
-    unsafe fn world_reset(&mut self, full: bool) {
+    fn world_reset(&mut self, full: bool) {
         // Block input for N frames
         self.no_input_frames = 0;
         self.screen = Screen::Shop;
@@ -656,9 +655,7 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn world_gen(&mut self) {
+    fn world_gen(&mut self) {
         self.world = MiniBitVec::new();
         trace("World");
         for y in 0..WORLD_SIZE {
@@ -725,7 +722,7 @@ impl GameMaster {
         }
     }
 
-    unsafe fn drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
+    fn drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
         // Prevent overflow and out-of-bounds
         if x.checked_add(w).map_or(true, |end_x| end_x > WORLD_SIZE)
             || y.checked_add(h).map_or(true, |end_y| end_y > WORLD_SIZE)
@@ -751,7 +748,7 @@ impl GameMaster {
         }
     }
 
-    unsafe fn player_collide_world(&mut self, cache: Pos) -> bool {
+    fn player_collide_world(&mut self, cache: Pos) -> bool {
         // Collision with world
         let mut collided = false;
         for dy in 0..PLAYER_SIZE {
@@ -773,24 +770,25 @@ impl GameMaster {
         collided
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn player_collide_misc(&mut self) {
+    fn player_collide_misc(&mut self) {
         // Check for gold collection
-        self.gold_locs.retain(|gold| {
-            let collected = GM.pos.x < gold.x + 4
-                && GM.pos.x + PLAYER_SIZE as i16 > gold.x
-                && GM.pos.y < gold.y + 4
-                && GM.pos.y + PLAYER_SIZE as i16 > gold.y;
-            if collected {
-                GM.sfx_gold();
-                GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
-                GM.gold += 1;
-                false
-            } else {
-                true
-            }
-        });
+        unsafe {
+            #[allow(static_mut_refs)]
+            self.gold_locs.retain(|gold| {
+                let collected = GM.pos.x < gold.x + 4
+                    && GM.pos.x + PLAYER_SIZE as i16 > gold.x
+                    && GM.pos.y < gold.y + 4
+                    && GM.pos.y + PLAYER_SIZE as i16 > gold.y;
+                if collected {
+                    GM.sfx_gold();
+                    GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
+                    GM.gold += 1;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
         // Check for collisions with doors
         let door_collide = self.pos.x < self.exit_loc.x + 8
             && self.pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
@@ -804,7 +802,7 @@ impl GameMaster {
         }
     }
 
-    unsafe fn clear_at_player(&mut self) {
+    fn clear_at_player(&mut self) {
         for dy in 0..PLAYER_SIZE as i16 {
             for dx in 0..PLAYER_SIZE as i16 {
                 let wx = (self.pos.x + dx) as usize;
@@ -816,7 +814,7 @@ impl GameMaster {
         }
     }
 
-    unsafe fn player_wrap(&mut self) {
+    fn player_wrap(&mut self) {
         if self.pos.x < 0 {
             self.pos.x = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
             self.clear_at_player();
@@ -837,56 +835,46 @@ impl GameMaster {
         text(&format!("{}", amt), x + 10, y);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_dig(&mut self) {
+    fn sfx_dig(&mut self) {
         let max = 440 - self.pos.y as u32 * 2; // 160
         let f = self.rng.u32(120..max);
         tone(f, 0, 75, TONE_NOISE);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_rain(&mut self, p: &Pos) {
+    fn sfx_rain(&mut self, p: &Pos) {
         let f = self.rng.u32(440..880);
         let dist = p.distance(&self.pos) as u32;
         let vol = 5 + (if dist > 50 { 20 } else { 50 - dist });
         tone(f, 0, vol, TONE_PULSE2);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_gold(&mut self) {
+    fn sfx_gold(&mut self) {
         let f = self.rng.u32(400..440);
         tone(f, 4, 128, TONE_PULSE1);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_dmg(&mut self) {
+    fn sfx_dmg(&mut self) {
         let f = self.rng.u32(200..220);
         tone(f, 4, 128, TONE_PULSE1);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_drill_overheat(&mut self) {
+    fn sfx_drill_overheat(&mut self) {
         tone(150, 60, 128, TONE_NOISE);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_drill_warn(&mut self) {
+    fn sfx_drill_warn(&mut self) {
         tone(840, 1, 128, TONE_TRIANGLE);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_buy(&mut self) {
+    fn sfx_buy(&mut self) {
         tone(600, 2, 128, TONE_TRIANGLE);
     }
 
-    #[allow(static_mut_refs)]
-    unsafe fn sfx_deny(&mut self) {
+    fn sfx_deny(&mut self) {
         tone(400, 2, 128, TONE_TRIANGLE);
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn input_main(&mut self) {
+    fn input_main(&mut self) {
         let pos_cache = self.pos;
         let mut drill_down = false;
         self.is_drilling = false;
@@ -952,9 +940,7 @@ impl GameMaster {
         self.player_wrap();
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn update_drill(&mut self) {
+    fn update_drill(&mut self) {
         if self.is_drilling {
             self.drill_heat = self.drill_heat.saturating_add(1);
         } else if self.drill_overheat {
@@ -978,9 +964,7 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn update_rain(&mut self) {
+    fn update_rain(&mut self) {
         // Add rain
         let mut rain_chance = self.frame / self.diff.rain_chance_rte as u32;
         if rain_chance > 100 {
@@ -1084,9 +1068,7 @@ impl GameMaster {
         self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn update_drones(&mut self) {
+    fn update_drones(&mut self) {
         // Add drones
         if self.frame % self.diff.drone_rte as u32 == 0
             && self.drone_locs.len() < self.diff.drone_limit
@@ -1123,18 +1105,6 @@ impl GameMaster {
                 }
             }
             clear_locs.push(Pos::new(drone.x, drone.y));
-            // Remove world blocks at drone position
-            // TODO: Cant use self.world_set here as it would borrow self mutably
-            // This should be changed to use a list of positions to clear after the loop
-            // for dy in 0..4 {
-            //     for dx in 0..6 {
-            //         let wx = (drone.x + dx) as usize;
-            //         let wy = (drone.y + dy) as usize;
-            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            //             clear_locs.push(Pos::new(wx as i16, wy as i16));
-            //         }
-            //     }
-            // }
         }
         if trigger_sfx {
             self.sfx_dmg();
@@ -1142,18 +1112,10 @@ impl GameMaster {
         // Clear world blocks
         for loc in clear_locs {
             self.world_set_area(loc.x as usize, loc.y as usize, 8, 4, false);
-            // if loc.x >= 0 && loc.y >= 0 {
-            //     let wx = loc.x as usize;
-            //     let wy = loc.y as usize;
-            //     if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            //         self.world_set(wx, wy, false);
-            //     }
-            // }
         }
     }
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn update_flies(&mut self) {
+
+    fn update_flies(&mut self) {
         // Update fly location
         if self.frame % 8 != 0 {
             return;
@@ -1232,23 +1194,11 @@ impl GameMaster {
         for &i in hits_world.iter().rev() {
             let fly = self.fly_locs[i].clone();
             self.world_set_area(fly.x as usize, fly.y as usize, 8, 4, false);
-            // for dy in 0..4 {
-            //     for dx in 0..8 {
-            //         let wx = (fly.x + dx) as usize;
-            //         let wy = (fly.y + dy) as usize;
-            //         if wx < WORLD_SIZE && wy < WORLD_SIZE {
-            //             self.world_set(wx, wy, false);
-            //         }
-            //     }
-            // }
             self.sfx_rain(&fly);
-            // self.fly_locs.remove(i);
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn update_sliders(&mut self) {
+    fn update_sliders(&mut self) {
         // Sliders move left and right only
         if self.frame % 8 != 0 {
             return;
@@ -1312,14 +1262,12 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
     // NOTE: This is a VERY expensive operation
     // We need to split the world update over multiple frames or we will run out of memeory
     // The larger the split size the faster the world updates
     // This effects the speed of falling blocks
     // WARN: `split_size` must evenly divide `WORLD_SIZE`
-    unsafe fn update_world(&mut self) {
+    fn update_world(&mut self) {
         // If world blocks have less than 4 neighbors, they fall down
         let split_size = 4;
         let falling_limit = 160; // Max number of blocks to fall per update
@@ -1381,9 +1329,7 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn main_logic(&mut self) {
+    fn main_logic(&mut self) {
         self.input_main();
         self.player_collide_misc();
 
@@ -1401,9 +1347,7 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn shop_logic(&mut self) {
+    fn shop_logic(&mut self) {
         fn cont(gm: &mut GameMaster) {
             gm.lvl += 1;
             if gm.lvl >= MAX_LVL {
@@ -1458,21 +1402,31 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn render_start(&mut self) {
-        if GM.screen == Screen::Start {
-            *DRAW_COLORS = 1;
+    fn draw_colors_set(&mut self, c: u16) {
+        unsafe { *DRAW_COLORS = c };
+    }
+
+    fn palette_set(&mut self, pal: [u32; 4]) {
+        unsafe {
+            *PALETTE = pal;
+        }
+    }
+
+    fn render_start(&mut self) {
+        if self.screen == Screen::Start {
+            self.draw_colors_set(1);
             rect(0, 0, 160, 160);
             for x in 0..5 as i32 {
                 for y in 0..8 {
-                    *DRAW_COLORS = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
+                    let c = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
+                    self.draw_colors_set(c);
                     text("ACID", x * 32, y * 20);
-                    *DRAW_COLORS = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
+                    let c2 = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
+                    self.draw_colors_set(c2);
                     text("RAIN", x * 32, 10 + y * 20);
                 }
             }
-            *DRAW_COLORS = 1;
+            self.draw_colors_set(1);
             for x in 0..5 as i32 {
                 for y in 0..8 {
                     text("ACID", 1 + x * 32, 1 + y * 20);
@@ -1480,7 +1434,6 @@ impl GameMaster {
                 }
             }
             if self.frame % 512 > 20 {
-                *DRAW_COLORS = 1;
                 for y in 0..80 {
                     hline(0, y * 2, 160);
                 }
@@ -1489,17 +1442,17 @@ impl GameMaster {
                 let sina = (self.frame as f32 / 320.).sin() * 2.0;
                 let sin = ((self.frame as f32 / 10.) + (i as f32 / (4. + sina))).sin();
                 let y = (sin * 8.0 + 140.0) as i32;
-                *DRAW_COLORS = 2;
+                self.draw_colors_set(2);
                 rect(i as i32, y, 1, (160 - y) as u32);
             }
-            *DRAW_COLORS = 2;
+            self.draw_colors_set(2);
             text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
-            *DRAW_COLORS = 3;
+            self.draw_colors_set(3);
             if (self.frame / 30) % 2 == 0 {
-                *DRAW_COLORS = 4;
+                self.draw_colors_set(4);
             }
             text(b"PRESS \x80 TO START", 16, 105);
-            *DRAW_COLORS = 2;
+            self.draw_colors_set(2);
             let x = 10;
             let y = 10;
             blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
@@ -1512,7 +1465,7 @@ impl GameMaster {
             blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
             let x = 12;
             let y = 12;
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
             blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
             blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
@@ -1524,26 +1477,24 @@ impl GameMaster {
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn render_shop(&mut self) {
-        if GM.screen == Screen::Shop {
-            *DRAW_COLORS = 1;
+    fn render_shop(&mut self) {
+        if self.screen == Screen::Shop {
+            self.draw_colors_set(1);
             rect(0, 0, 160, 160);
-            *DRAW_COLORS = 3;
+            self.draw_colors_set(2);
             rect(0, 0, 160, 80);
-            *DRAW_COLORS = 1;
+            self.draw_colors_set(1);
             for x in 0..160 {
-                let sina = (GM.frame as f32 / 320.).sin() * 2.0;
-                let sin = ((GM.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
+                let sina = (self.frame as f32 / 320.).sin() * 2.0;
+                let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
                 let y = (sin * 8.0 + 32.0) as i32;
                 rect(x as i32, y, 1, (160 - y) as u32);
             }
-            *DRAW_COLORS = 1;
+            self.draw_colors_set(1);
             let sy = (self.frame as f32 / 8.).sin() * 2.0;
             text("UPGRADES!", 50, 6 + sy as i32);
             self.draw_gold(50, 14 + sy as i32, self.gold);
-            *DRAW_COLORS = 3;
+            self.draw_colors_set(3);
             vline(115, 45, 80);
             // Up
             text(b"\x86HEART PIECE", 12, 50);
@@ -1558,15 +1509,15 @@ impl GameMaster {
             self.draw_gold(120, 110, self.cost_drill_cool);
             text(format!("{}/1024", self.drill_heat_max), 20, 120);
             // Down
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             hline(0, 135, 160);
             text(b"\x87NEXT  LEVEL", 30, 145);
 
             // Purchased
             if self.purchased > 0 {
-                *DRAW_COLORS = 1;
+                self.draw_colors_set(1);
                 rect(0, 45, 160, 120);
-                *DRAW_COLORS = 4;
+                self.draw_colors_set(4);
                 text("PURCHASED!", 12, 60);
                 match self.purchased {
                     1 => {
@@ -1583,179 +1534,170 @@ impl GameMaster {
                     }
                     _ => {}
                 }
-                *DRAW_COLORS = 3;
+                self.draw_colors_set(3);
                 text(b"\x80TO CONTINUE", 12, 110);
             }
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn render_transition(&mut self) {
-        if GM.screen == Screen::Transition {
-            *DRAW_COLORS = 1;
+    fn render_transition(&mut self) {
+        if self.screen == Screen::Transition {
+            self.draw_colors_set(1);
             rect(0, 0, 160, 160);
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             let trans_text = format!("LEVEL {}", self.lvl);
             text(trans_text, 50, 60);
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn render_gameover(&mut self) {
-        if GM.screen == Screen::GameOver {
-            *PALETTE = PAL_GAMEOVER;
-            *DRAW_COLORS = 1;
+    fn render_gameover(&mut self) {
+        if self.screen == Screen::GameOver {
+            self.palette_set(PAL_GAMEOVER);
+            self.draw_colors_set(1);
             // rect(0, 0, 160, 160);
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             let over_text = "GAME OVER";
-            *DRAW_COLORS = 3;
+            self.draw_colors_set(3);
             text(over_text, 45, 60);
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             text(over_text, 46, 61);
-            *DRAW_COLORS = 2;
-            text(GM.gold.to_string(), 10, 80);
+            self.draw_colors_set(2);
+            text(self.gold.to_string(), 10, 80);
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn render_gameend(&mut self) {
-        if GM.screen == Screen::GameEnd {
-            *PALETTE = PAL_GAMEOVER;
-            *DRAW_COLORS = 1;
+    fn render_gameend(&mut self) {
+        if self.screen == Screen::GameEnd {
+            self.palette_set(PAL_GAMEOVER);
+            self.draw_colors_set(1);
             // rect(0, 0, 160, 160);
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             let over_text = "GAME END";
-            *DRAW_COLORS = 3;
+            self.draw_colors_set(3);
             text(over_text, 45, 60);
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             text(over_text, 46, 61);
-            *DRAW_COLORS = 2;
-            text(GM.gold.to_string(), 10, 80);
+            self.draw_colors_set(2);
+            text(self.gold.to_string(), 10, 80);
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn draw_no_input(&mut self) {
-        if GM.no_input_frames > 0 {
-            *DRAW_COLORS = 2;
+    fn draw_no_input(&mut self) {
+        if self.no_input_frames > 0 {
+            self.draw_colors_set(2);
             rect(0, 0, 160, 2);
             rect(0, 158, 160, 2);
             rect(0, 0, 2, 160);
             rect(158, 0, 2, 160);
-            GM.no_input_frames -= 1;
+            self.no_input_frames -= 1;
         }
     }
 
-    #[no_mangle]
-    #[allow(static_mut_refs)]
-    unsafe fn render(&mut self) {
+    fn render(&mut self) {
         // Always run palette change first
         // If took damage, change palette briefly
-        if GM.dmg_frames > 0 {
-            *PALETTE = PAL_DMG;
-            GM.dmg_frames -= 1;
+        if self.dmg_frames > 0 {
+            self.palette_set(PAL_DMG);
+            self.dmg_frames -= 1;
         } else {
-            *PALETTE = PAL;
+            self.palette_set(PAL);
         }
 
-        if GM.screen != Screen::Game {
+        if self.screen != Screen::Game {
             return;
         }
 
         // Health
-        for i in 0..GM.hp {
-            *DRAW_COLORS = 3;
+        for i in 0..self.hp {
+            self.draw_colors_set(3);
             // rect(45 + i as i32 * 6, 4, 4, 4);
             blit(&HEART, 76 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
         }
         // Gold collected
-        // text(GM.gold.to_string(), 4, 2);
-        self.draw_gold(4, 2, GM.gold);
+        // text(self.gold.to_string(), 4, 2);
+        self.draw_gold(4, 2, self.gold);
 
         // Heat bar
-        *DRAW_COLORS = 2;
+        self.draw_colors_set(2);
         let heat_bar_width = 80;
-        let heat_width = (GM.drill_heat as u32 * heat_bar_width) / (GM.drill_heat_max as u32);
+        let heat_width = (self.drill_heat as u32 * heat_bar_width) / (self.drill_heat_max as u32);
         rect(76, 12, heat_bar_width, 4);
-        *DRAW_COLORS = 3;
-        if GM.drill_overheat {
-            let c = (GM.frame / 10) % 2;
-            *DRAW_COLORS = (c + 3) as u16;
+        self.draw_colors_set(3);
+        if self.drill_overheat {
+            let f = (self.frame / 10) % 2;
+            let c = (f + 3) as u16;
+            self.draw_colors_set(c);
         }
         rect(76, 12, heat_width, 4);
         // Render the world
         for y in 0..WORLD_SIZE {
             for x in 0..WORLD_SIZE {
-                if let Some(cell) = GM.world_get(x, y) {
+                if let Some(cell) = self.world_get(x, y) {
                     if cell {
-                        *DRAW_COLORS = 2;
+                        self.draw_colors_set(2);
                         rect(x as i32, y as i32, 1, 1);
                     }
                 }
             }
         }
-        *DRAW_COLORS = 4;
+        self.draw_colors_set(4);
 
         // Render player
-        let player_flags = match GM.dir {
-            0 => GM.player_flags_last,
+        let player_flags = match self.dir {
+            0 => self.player_flags_last,
             1 => BLIT_1BPP | BLIT_FLIP_X,
             2 => BLIT_1BPP,
-            _ => GM.player_flags_last,
+            _ => self.player_flags_last,
         };
-        GM.player_flags_last = player_flags;
-        let player_frame = (GM.frame / 10) % 3;
+        self.player_flags_last = player_flags;
+        let player_frame = (self.frame / 10) % 3;
         let mut player_sprite = match player_frame {
             0 => &SMILEY1,
             1 => &SMILEY2,
             2 => &SMILEY3,
             _ => &SMILEY1,
         };
-        if GM.dir == 0 {
+        if self.dir == 0 {
             player_sprite = &SMILEY1;
         }
         blit(
             player_sprite,
-            GM.pos.x as i32,
-            GM.pos.y as i32,
+            self.pos.x as i32,
+            self.pos.y as i32,
             8,
             PLAYER_SIZE as u32,
             player_flags,
         );
 
         // Render drill
-        let drill_off = match GM.dir {
+        let drill_off = match self.dir {
             0 => Pos::new(PLAYER_SIZE as i16, 0),
             1 => Pos::new(-(PLAYER_SIZE as i16), 0),
             2 => Pos::new(PLAYER_SIZE as i16, 0),
             3 => Pos::new(0, PLAYER_SIZE as i16),
             _ => Pos::new(PLAYER_SIZE as i16, 0),
         };
-        let drill_flags = match GM.dir {
+        let drill_flags = match self.dir {
             0 => BLIT_1BPP,
             1 => BLIT_1BPP | BLIT_FLIP_X,
             2 => BLIT_1BPP,
             3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
             _ => BLIT_1BPP,
         };
-        let drill_show = match GM.dir {
+        let drill_show = match self.dir {
             0 => false,
             1 => true,
             2 => true,
             3 => true,
             _ => false,
         };
-        if drill_show && GM.is_drilling {
-            let drill_frame = (GM.frame / 5) % 2;
+        if drill_show && self.is_drilling {
+            let drill_frame = (self.frame / 5) % 2;
             let drill_sprite = if drill_frame == 0 { &DRILL } else { &DRILL2 };
             blit(
                 drill_sprite,
-                (GM.pos.x + drill_off.x) as i32,
-                (GM.pos.y + drill_off.y) as i32,
+                (self.pos.x + drill_off.x) as i32,
+                (self.pos.y + drill_off.y) as i32,
                 8,
                 PLAYER_SIZE as u32,
                 drill_flags,
@@ -1763,39 +1705,39 @@ impl GameMaster {
         }
 
         // Render gold locations
-        let gold_frame = (GM.frame / 15) % 2;
+        let gold_frame = (self.frame / 15) % 2;
         let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
-        for gold in &GM.gold_locs {
-            *DRAW_COLORS = 3;
+        self.draw_colors_set(3);
+        for gold in &self.gold_locs {
             // rect(gold.x as i32, gold.y as i32, 2, 2);
             blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
         }
 
         // Render exit
-        let door_frame = (GM.frame / 20) % 2;
+        let door_frame = (self.frame / 20) % 2;
         let door_sprite = if door_frame == 0 { &DOOR1 } else { &DOOR2 };
-        *DRAW_COLORS = 1;
-        rect(GM.exit_loc.x as i32, GM.exit_loc.y as i32, 8, 8);
-        *DRAW_COLORS = 3;
+        self.draw_colors_set(1);
+        rect(self.exit_loc.x as i32, self.exit_loc.y as i32, 8, 8);
+        self.draw_colors_set(3);
         blit(
             door_sprite,
-            GM.exit_loc.x as i32,
-            GM.exit_loc.y as i32,
+            self.exit_loc.x as i32,
+            self.exit_loc.y as i32,
             8,
             8,
             BLIT_1BPP,
         );
 
         // Render rain
-        for rain in &GM.rain_locs {
-            *DRAW_COLORS = 4;
+        self.draw_colors_set(4);
+        for rain in &self.rain_locs {
             rect(rain.x as i32, rain.y as i32, 1, 1);
         }
         // Render drones
-        let drone_frame = (GM.frame / 10) % 2;
+        let drone_frame = (self.frame / 10) % 2;
         let drone_sprite = if drone_frame == 0 { &DRONE1 } else { &DRONE2 };
-        for drone in &GM.drone_locs {
-            *DRAW_COLORS = 4;
+        self.draw_colors_set(4);
+        for drone in &self.drone_locs {
             // rect(drone.x as i32, drone.y as i32, 6, 4);
             blit(
                 drone_sprite,
@@ -1808,23 +1750,23 @@ impl GameMaster {
         }
 
         // Render flies
-        let fly_frame = (GM.frame / 10) % 2;
+        let fly_frame = (self.frame / 10) % 2;
         let fly_sprite = if fly_frame == 0 { &FLY1 } else { &FLY2 };
-        for fly in &GM.fly_locs {
-            *DRAW_COLORS = 4;
+        self.draw_colors_set(4);
+        for fly in &self.fly_locs {
             // rect(fly.x as i32, fly.y as i32, 4, 4);
             blit(fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
         }
 
         // Render sliders
-        let slider_frame = (GM.frame / 10) % 2;
+        let slider_frame = (self.frame / 10) % 2;
         let slider_sprite = if slider_frame == 0 {
             &SLIDER1
         } else {
             &SLIDER2
         };
-        for slider in &GM.slider_locs {
-            *DRAW_COLORS = 4;
+        self.draw_colors_set(4);
+        for slider in &self.slider_locs {
             // rect(slider.x as i32, slider.y as i32, 6, 4);
             blit(
                 slider_sprite,
@@ -1841,11 +1783,11 @@ impl GameMaster {
         // Really only want to highlight visible to sky
         for x in 0..WORLD_SIZE {
             for y in 0..WORLD_SIZE {
-                if let Some(cell) = GM.world_get(x, y) {
+                if let Some(cell) = self.world_get(x, y) {
                     if cell {
                         // Check if block above is empty
-                        if y == 0 || GM.world_get(x, y - 1) == Some(false) {
-                            *DRAW_COLORS = 3;
+                        if y == 0 || self.world_get(x, y - 1) == Some(false) {
+                            self.draw_colors_set(3);
                             rect(x as i32, y as i32, 1, 1);
                         }
                     }
@@ -1854,10 +1796,10 @@ impl GameMaster {
         }
 
         // Help text
-        if GM.has_drilled == false && GM.lvl == 1 {
-            *DRAW_COLORS = 1;
+        if self.has_drilled == false && self.lvl == 1 {
+            self.draw_colors_set(1);
             rect(50, 50, 60, 24);
-            *DRAW_COLORS = 4;
+            self.draw_colors_set(4);
             let help_text = b"\x84\x85\x87+\x80\nTO DIG";
             text(help_text, 57, 53);
         }
@@ -1867,7 +1809,6 @@ impl GameMaster {
 static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster::new());
 
 #[no_mangle]
-#[allow(static_mut_refs)]
 unsafe fn start() {
     *PALETTE = PAL;
     GM.world = MiniBitVec::new();
