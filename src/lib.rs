@@ -320,13 +320,13 @@ const LOGO_N: [u8; 32] = [
     0b00001001, 0b11010000,
     0b10101001, 0b11010010,
 ];
+static PAL: [u32; 4] = [0x001110, 0x506655, 0xD0FFDD, 0xEEFFE0];
+static PAL_DMG: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
+static PAL_GAMEOVER: [u32; 4] = [0x221111, 0x551111, 0xDD1111, 0xFF1111];
 static DEBUG: bool = false;
 static WORLD_SIZE: usize = 160;
 static PLAYER_SIZE: u8 = 8;
 static RAIN_MAX: usize = 500;
-static PAL: [u32; 4] = [0x001110, 0x506655, 0xD0FFDD, 0xEEFFE0];
-static PAL_DMG: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
-static PAL_GAMEOVER: [u32; 4] = [0x221110, 0x506655, 0xD0FFDD, 0xEEFFE0];
 static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
 static MAX_LVL: usize = 8;
@@ -389,7 +389,7 @@ impl MiniBitVec {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 // NOTE: Cant use unsigned because we need negative
 // Cant use i8 because 160x160
 struct Pos {
@@ -451,6 +451,14 @@ impl LVlSettings {
             rain_amount_rte: 200,
             gold_amt: 10,
         }
+    }
+    fn apply_difficulty(&mut self, difficulty: u8) {
+        self.drone_limit *= difficulty as usize;
+        self.fly_limit *= difficulty as usize;
+        self.slider_limit *= difficulty as usize;
+        self.drone_rte = self.drone_rte.saturating_div(difficulty as u16);
+        self.rain_chance_rte = self.rain_chance_rte.saturating_div(difficulty as u16);
+        self.rain_amount_rte = self.rain_amount_rte.saturating_div(difficulty as u16);
     }
 }
 
@@ -563,6 +571,8 @@ struct GameMaster {
     cost_drill_cool: u16,
     purchased: u8,
     auto_drill: bool,
+    difficulty: u8,
+    gameover_acc: u8,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -571,7 +581,7 @@ impl GameMaster {
             seed: 0,
             frame: 0,
             lvl: 1,
-            hp: 8,
+            hp: 1,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
@@ -601,6 +611,8 @@ impl GameMaster {
             cost_drill_cool: 16,
             purchased: 0, // None, shop, drill speed, drill cool
             auto_drill: true,
+            difficulty: 2,
+            gameover_acc: 0,
         }
     }
 
@@ -796,6 +808,18 @@ impl GameMaster {
         if sfx {
             self.sfx_dig();
         }
+    }
+
+    fn collides(&self, origin_a: &Pos, size_a: &Pos, origin_b: &Pos, size_b: &Pos) -> bool {
+        !(origin_a.x + size_a.x <= origin_b.x
+            || origin_a.x >= origin_b.x + size_b.x
+            || origin_a.y + size_a.y <= origin_b.y
+            || origin_a.y >= origin_b.y + size_b.y)
+    }
+
+    fn collides_player(&self, pos: &Pos, size: &Pos) -> bool {
+        let player_size = Pos::new(PLAYER_SIZE as i16, PLAYER_SIZE as i16);
+        self.collides(&self.player_pos, &player_size, pos, size)
     }
 
     fn world_clear_at_player(&mut self) {
@@ -1059,12 +1083,25 @@ impl GameMaster {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             self.drone_locs.push(Pos::new(x, 0));
         }
-        // Update drones
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, drone) in self.drone_locs.iter().enumerate() {
+            let collides = self.collides_player(drone, &Pos::new(8, 4));
+            if collides {
+                hits_player.push(i);
+            }
+        }
+        for &i in hits_player.iter().rev() {
+            self.drone_locs.remove(i);
+            self.dmg_frames = DMG_FRAMES;
+            self.hp = self.hp.saturating_sub(1);
+            self.sfx_dmg();
+        }
+        // Update drones every N frames
         if self.frame % 16 != 0 {
             return;
         }
         // Move towards player
-        let mut trigger_sfx = false;
         let mut clear_locs: Vec<Pos> = Vec::new();
         for drone in &mut self.drone_locs {
             let dx = self.player_pos.x - drone.x;
@@ -1077,20 +1114,7 @@ impl GameMaster {
                 drone.y += step_y;
                 drone.clamp_to_world();
             }
-            // Check for collision with player
-            for py in 0..PLAYER_SIZE as i16 {
-                for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.player_pos.x + px;
-                    let py_pos = self.player_pos.y + py;
-                    if px_pos == drone.x && py_pos == drone.y {
-                        trigger_sfx = true;
-                    }
-                }
-            }
             clear_locs.push(Pos::new(drone.x, drone.y));
-        }
-        if trigger_sfx {
-            self.sfx_dmg();
         }
         // Clear world blocks
         for loc in clear_locs {
@@ -1099,7 +1123,21 @@ impl GameMaster {
     }
 
     fn update_flies(&mut self) {
-        // Update fly location
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, fly) in self.fly_locs.iter().enumerate() {
+            let collides = self.collides_player(fly, &Pos::new(8, 4));
+            if collides {
+                hits_player.push(i);
+            }
+        }
+        for &i in hits_player.iter().rev() {
+            self.fly_locs.remove(i);
+            self.dmg_frames = DMG_FRAMES;
+            self.hp = self.hp.saturating_sub(1);
+            self.sfx_dmg();
+        }
+        // Only move every N frames
         if self.frame % 8 != 0 {
             return;
         }
@@ -1142,25 +1180,6 @@ impl GameMaster {
             }
             fly.clamp_to_world();
         }
-        // Check for collision with player
-        let mut hits_player: Vec<usize> = Vec::new();
-        for (i, fly) in self.fly_locs.iter().enumerate() {
-            for py in 0..PLAYER_SIZE as i16 {
-                for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.player_pos.x + px;
-                    let py_pos = self.player_pos.y + py;
-                    if px_pos == fly.x && py_pos == fly.y {
-                        hits_player.push(i);
-                    }
-                }
-            }
-        }
-        for &i in hits_player.iter().rev() {
-            self.fly_locs.remove(i);
-            self.dmg_frames = DMG_FRAMES;
-            self.hp = self.hp.saturating_sub(1);
-            self.sfx_dmg();
-        }
         // Check for collision with world
         let mut hits_world: Vec<usize> = Vec::new();
         for (i, fly) in self.fly_locs.iter().enumerate() {
@@ -1182,11 +1201,25 @@ impl GameMaster {
     }
 
     fn update_sliders(&mut self) {
-        // Sliders move left and right only
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, slider) in self.slider_locs.iter().enumerate() {
+            let collides = self.collides_player(slider, &Pos::new(8, 4));
+            if collides {
+                hits_player.push(i);
+            }
+        }
+        for &i in hits_player.iter().rev() {
+            self.slider_locs.remove(i);
+            self.dmg_frames = DMG_FRAMES;
+            self.hp = self.hp.saturating_sub(1);
+            self.sfx_dmg();
+        }
+        // Only move every N frames
         if self.frame % 8 != 0 {
             return;
         }
-        // Move randomly
+        // Sliders move left and right only
         for slider in &mut self.slider_locs {
             let dir = self.rng.i32(0..2);
             match dir {
@@ -1204,25 +1237,6 @@ impl GameMaster {
                 }
                 _ => {}
             }
-        }
-        // Check for collision with player
-        let mut hits_player: Vec<usize> = Vec::new();
-        for (i, slider) in self.slider_locs.iter().enumerate() {
-            for py in 0..PLAYER_SIZE as i16 {
-                for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.player_pos.x + px;
-                    let py_pos = self.player_pos.y + py;
-                    if px_pos == slider.x && py_pos == slider.y {
-                        hits_player.push(i);
-                    }
-                }
-            }
-        }
-        for &i in hits_player.iter().rev() {
-            self.slider_locs.remove(i);
-            self.dmg_frames = DMG_FRAMES;
-            self.hp = self.hp.saturating_sub(1);
-            self.sfx_dmg();
         }
         // Check for collision with world
         let mut hits_world: Vec<usize> = Vec::new();
@@ -1327,18 +1341,18 @@ impl GameMaster {
 
         // Check for game over
         if self.hp == 0 {
-            self.screen = Screen::GameOver;
+            self.gameover_acc += 1;
+            self.no_input_frames = NO_INPUT_FRAMES;
+            if self.gameover_acc > 120 {
+                self.gameover_acc = 120;
+                self.screen = Screen::GameOver;
+            }
         }
     }
 
     fn update_shop(&mut self) {
         fn cont(gm: &mut GameMaster) {
             gm.lvl += 1;
-            // if gm.lvl >= MAX_LVL {
-            //     gm.lvl = MAX_LVL;
-            //     gm.screen = Screen::GameOver;
-            //     return;
-            // }
             gm.no_input_frames = NO_INPUT_FRAMES;
             gm.screen = Screen::Transition;
         }
@@ -1637,6 +1651,8 @@ impl GameMaster {
         if self.dmg_frames > 0 {
             self.palette_set(PAL_DMG);
             self.dmg_frames -= 1;
+        } else if self.gameover_acc > 0 {
+            self.palette_set(PAL_GAMEOVER);
         } else {
             self.palette_set(PAL);
         }
@@ -1872,6 +1888,7 @@ impl GameMaster {
             if self.input_check_any() {
                 self.world_reset();
                 self.cur_lvl_data = LVLS[self.lvl];
+                self.cur_lvl_data.apply_difficulty(self.difficulty);
                 self.world_gen();
                 self.screen = Screen::Game;
             }
