@@ -1881,6 +1881,11 @@ impl GameMaster {
             self.frame += 1;
         } else if self.screen == Screen::GameOver {
             // *PALETTE = PAL_GAMEOVER;
+            if self.input_check_any() {
+                *self = GameMaster::new();
+                self.no_input_frames = NO_INPUT_FRAMES;
+                return;
+            }
         } else if self.screen == Screen::Shop {
             self.update_shop();
             self.frame += 1;
