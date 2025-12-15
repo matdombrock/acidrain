@@ -377,9 +377,10 @@ static PLAYER_SIZE: u8 = 8;
 static RAIN_MAX: usize = 500;
 static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
+static POWERUP_FRAMES: u16 = 600;
 static MAX_LVL: usize = 8;
 static DIRT_START: u8 = 24;
-static MUSIC_ENABLED: bool = true;
+static MUSIC_ENABLED: bool = false;
 
 pub struct MiniBitVec {
     data: Vec<u8>,
@@ -586,11 +587,14 @@ const LVLS: [LVlSettings; MAX_LVL] = [
     },
 ];
 
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum PowerUp {
+    None,
     SuperDrill,
     Invincible,
     Magnet,
 }
+const POWERUP_TYPES: [PowerUp; 3] = [PowerUp::SuperDrill, PowerUp::Invincible, PowerUp::Magnet];
 
 struct GameMaster {
     rng: Rng,
@@ -604,6 +608,8 @@ struct GameMaster {
     door_loc: Pos,
     powerup_loc: Pos,
     powerup_taken: bool,
+    powerup_cur: PowerUp,
+    powerup_frames: u16,
     gold_locs: Vec<Pos>,
     gold: u16,
     drill_speed: u8,
@@ -647,6 +653,8 @@ impl GameMaster {
             door_loc: Pos { x: 0, y: 0 },
             powerup_loc: Pos { x: 0, y: 0 },
             powerup_taken: false,
+            powerup_cur: PowerUp::None,
+            powerup_frames: 0,
             gold_locs: Vec::new(),
             gold: 0,
             drill_speed: 64,
@@ -811,7 +819,8 @@ impl GameMaster {
         // Powerup location
         trace("Powerup");
         let pu_x = self.rng.i16(0..(WORLD_SIZE as i16));
-        let pu_y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+        // Only spawn at higher y
+        let pu_y = self.rng.i16(DIRT_START as i16..(DIRT_START as i16 + 64));
         self.powerup_loc = Pos::new(pu_x, pu_y);
         self.world_set_area(
             (self.powerup_loc.x as usize).saturating_sub(4),
@@ -871,7 +880,7 @@ impl GameMaster {
             for dx in 0..w {
                 let wx = x + dx;
                 let wy = y + dy;
-                if self.rng.i32(0..128) < chance as i32 {
+                if self.rng.i32(0..128) < chance as i32 || self.powerup_cur == PowerUp::SuperDrill {
                     self.world_set(wx, wy, false);
                     sfx = true;
                 }
@@ -930,6 +939,9 @@ impl GameMaster {
     }
 
     fn player_collide_misc(&mut self) {
+        // NOTE: Player only checks against non-logical/non-moving ents here
+        // Other ents check their own collisions
+
         // Check for gold collection
         unsafe {
             #[allow(static_mut_refs)]
@@ -960,6 +972,10 @@ impl GameMaster {
             if pu_collide {
                 self.powerup_taken = true;
                 self.sfx_buy();
+                // Random powerup
+                let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
+                self.powerup_cur = POWERUP_TYPES[pu_index].clone();
+                self.powerup_frames = POWERUP_FRAMES; // 10 seconds at 60fps
             }
         }
     }
@@ -973,6 +989,15 @@ impl GameMaster {
             self.player_pos.x = 0;
             self.world_clear_at_player();
         }
+    }
+
+    fn player_dmg(&mut self) {
+        if self.powerup_cur == PowerUp::Invincible {
+            return;
+        }
+        self.dmg_frames = DMG_FRAMES;
+        self.hp = self.hp.saturating_sub(1);
+        self.sfx_dmg();
     }
 
     fn draw_gold(&mut self, x: i32, y: i32, amt: u16) {
@@ -1043,7 +1068,7 @@ impl GameMaster {
                 self.sfx_drill_warn();
             }
         }
-        if self.drill_heat >= self.drill_heat_max {
+        if self.drill_heat >= self.drill_heat_max && self.powerup_cur != PowerUp::SuperDrill {
             self.drill_overheat = true;
             self.sfx_drill_overheat();
         }
@@ -1090,9 +1115,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.rain_locs.remove(i);
-            self.dmg_frames = DMG_FRAMES;
-            self.hp = self.hp.saturating_sub(1);
-            self.sfx_dmg();
+            self.player_dmg();
         }
         // Check for collision with world
         let mut hits_world: Vec<usize> = Vec::new();
@@ -1174,9 +1197,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.drone_locs.remove(i);
-            self.dmg_frames = DMG_FRAMES;
-            self.hp = self.hp.saturating_sub(1);
-            self.sfx_dmg();
+            self.player_dmg();
         }
         // Update drones every N frames
         if self.frame % 16 != 0 {
@@ -1214,9 +1235,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.fly_locs.remove(i);
-            self.dmg_frames = DMG_FRAMES;
-            self.hp = self.hp.saturating_sub(1);
-            self.sfx_dmg();
+            self.player_dmg();
         }
         // Only move every N frames
         if self.frame % 8 != 0 {
@@ -1291,9 +1310,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.slider_locs.remove(i);
-            self.dmg_frames = DMG_FRAMES;
-            self.hp = self.hp.saturating_sub(1);
-            self.sfx_dmg();
+            self.player_dmg();
         }
         // Only move every N frames
         if self.frame % 8 != 0 {
@@ -1405,6 +1422,27 @@ impl GameMaster {
         }
     }
 
+    fn update_gold(&mut self) {
+        if (self.powerup_cur == PowerUp::Magnet) && (self.powerup_frames > 0) {
+            // Move gold towards player
+            if self.frame % 4 != 0 {
+                return;
+            }
+            for gold in &mut self.gold_locs {
+                let dx = self.player_pos.x - gold.x;
+                let dy = self.player_pos.y - gold.y;
+                let dist = self.player_pos.distance(gold);
+                if dist > 1.0 && dist < 64.0 {
+                    let step_x = (dx as f32 / dist).round() as i16;
+                    let step_y = (dy as f32 / dist).round() as i16;
+                    gold.x += step_x;
+                    gold.y += step_y;
+                    gold.clamp_to_world();
+                }
+            }
+        }
+    }
+
     fn update_music(&mut self) {
         if !MUSIC_ENABLED {
             return;
@@ -1509,6 +1547,7 @@ impl GameMaster {
         self.update_flies();
         self.update_sliders();
         self.update_world();
+        self.update_gold();
 
         // Check for game over
         if self.hp == 0 {
@@ -1814,6 +1853,19 @@ impl GameMaster {
             return;
         }
 
+        // Render the world
+        self.colors_set(3);
+        for y in 0..WORLD_SIZE {
+            for x in 0..WORLD_SIZE {
+                if let Some(cell) = self.world_get(x, y) {
+                    if cell {
+                        self.colors_set(2);
+                        rect(x as i32, y as i32, 1, 1);
+                    }
+                }
+            }
+        }
+
         // Health
         for i in 0..self.hp {
             self.colors_set(3);
@@ -1836,20 +1888,25 @@ impl GameMaster {
             self.colors_set(c);
         }
         rect(76, 12, heat_width, 4);
-        // Render the world
-        for y in 0..WORLD_SIZE {
-            for x in 0..WORLD_SIZE {
-                if let Some(cell) = self.world_get(x, y) {
-                    if cell {
-                        self.colors_set(2);
-                        rect(x as i32, y as i32, 1, 1);
-                    }
-                }
+
+        // Powerups
+        if self.powerup_frames > 1 {
+            if self.powerup_frames % 20 < 10 {
+                self.colors_set(2);
+            } else {
+                self.colors_set(3);
             }
+            let pu_text = match self.powerup_cur {
+                PowerUp::SuperDrill => "SDRILL",
+                PowerUp::Invincible => "INVINC",
+                PowerUp::Magnet => "MAGNET",
+                PowerUp::None => "",
+            };
+            text(pu_text, 4, 12);
         }
-        self.colors_set(4);
 
         // Render player
+        self.colors_set(4);
         let player_flags = match self.dir {
             0 => self.player_flags_last,
             1 => BLIT_1BPP | BLIT_FLIP_X,
@@ -2047,6 +2104,11 @@ impl GameMaster {
         self.screen_transition();
         self.update_music();
         self.frame += 1;
+        // Powerup frames countdown
+        self.powerup_frames = self.powerup_frames.saturating_sub(1);
+        if self.powerup_frames == 0 {
+            self.powerup_cur = PowerUp::None;
+        }
         // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
 
