@@ -569,7 +569,7 @@ impl GameMaster {
             rng: Rng::new(),
             seed: 0,
             frame: 0,
-            lvl: 7, // Start at 1
+            lvl: 1,
             hp: 8,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
@@ -1391,6 +1391,66 @@ impl GameMaster {
         }
     }
 
+    fn update_music(&mut self) {
+        if self.screen != Screen::Shop
+            && self.screen != Screen::Start
+            && self.screen != Screen::GameOver
+        {
+            return;
+        }
+        fn p1(note: u32, vol: u32) {
+            tone(note, 1, vol, TONE_PULSE1 | TONE_NOTE_MODE);
+        }
+        fn p2(note: u32, vol: u32) {
+            tone(note, 1, vol, TONE_PULSE2 | TONE_NOTE_MODE);
+        }
+        fn p3(note: u32, vol: u32) {
+            tone(note, 1, vol, TONE_TRIANGLE | TONE_NOTE_MODE);
+        }
+        fn p4(note: u32, vol: u32) {
+            tone(note, 1, vol, TONE_NOISE | TONE_NOTE_MODE);
+        }
+        let beat = (self.frame / 2) % 64;
+        match beat {
+            0 => p1(70 - 24, 100),
+            1 => p1(70 - 24, 100),
+            16 => p1(70 - 24, 100),
+            17 => p1(70 - 24, 100),
+            _ => p1(0, 0),
+        }
+        match beat {
+            0 => p3(70, 100),
+            1 => p3(75, 100),
+            4 => p3(77, 100),
+            _ => p3(0, 0),
+        }
+        let beat_noise = (self.frame / 8) % 4;
+        if beat_noise == 0 && (self.frame / 512) % 2 == 1 {
+            p4(120, 60);
+        } else if beat_noise == 2 && (self.frame / 1024) % 2 == 1 {
+            p4(120, 32);
+        } else {
+            p4(0, 0);
+        }
+        let notes = [0, 70, 73, 75, 77];
+        let beat_rng = (self.frame / 8) % 32;
+        let note = notes[self.rng.i32(0..notes.len() as i32) as usize];
+        match beat_rng {
+            2 => p2(note, 80),
+            4 => p2(75 - 12, 80),
+            8 => p2(note, 80),
+            10 => p2(73 - 12, 80),
+            12 => p2(70 - 12, 80),
+            18 => p2(note, 80),
+            20 => p2(75 - 12, 80),
+            24 => p2(note, 80),
+            26 => p2(73 - 12, 80),
+            28 => p2(70 - 12, 80),
+            31 => p2(68 - 12, 80),
+            _ => p2(0, 0),
+        }
+    }
+
     fn colors_set(&mut self, c: u16) {
         unsafe { *DRAW_COLORS = c };
     }
@@ -1812,6 +1872,9 @@ impl GameMaster {
                 self.screen = Screen::Game;
             }
         }
+        // Music
+        self.update_music();
+        // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
 
         // DRAW
