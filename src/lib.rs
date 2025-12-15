@@ -1804,83 +1804,94 @@ impl GameMaster {
             text(help_text, 57, 53);
         }
     }
+
+    fn start(&mut self) {
+        self.palette_set(PAL);
+        self.world = MiniBitVec::new();
+    }
+
+    fn update(&mut self) {
+        if self.screen == Screen::Start {
+            self.seed += 1; // Increment seed while on start screen
+            if self.input_check_any() {
+                // Seed random with current frame
+                self.rng = Rng::with_seed(45);
+                trace(format!("set seed: {}", self.seed));
+                self.no_input_frames = NO_INPUT_FRAMES;
+                self.screen = Screen::Transition;
+            }
+            self.frame += 1;
+        } else if self.screen == Screen::Game {
+            self.main_logic();
+            self.frame += 1;
+        } else if self.screen == Screen::GameOver {
+            // *PALETTE = PAL_GAMEOVER;
+        } else if self.screen == Screen::Shop {
+            self.shop_logic();
+            self.frame += 1;
+        } else if self.screen == Screen::Transition {
+            if self.input_check_any() {
+                self.world_reset(false);
+                self.diff = LVLS[self.lvl];
+                self.world_gen();
+                self.screen = Screen::Game;
+            }
+        }
+        self.no_input_frames = self.no_input_frames.saturating_sub(1);
+
+        // DRAW
+        self.render();
+        // NOTE: Other screens only render if active
+        // Start screen
+        self.render_start();
+        // Game over screen
+        self.render_gameover();
+        // Shop screen
+        self.render_shop();
+        // Transition screen
+        self.render_transition();
+        // Game end screen
+        self.render_gameend();
+        // No input overlay
+        self.draw_no_input();
+        // Debug
+        if DEBUG {
+            let dbg_string = format!(
+                "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
+                self.frame,
+                self.drone_locs.len(),
+                self.fly_locs.len(),
+                self.slider_locs.len(),
+                self.rain_locs.len()
+            );
+            text(dbg_string.as_str(), 100, 120);
+            let psize = std::mem::size_of::<Pos>();
+            let mut size = 0;
+            size += self.drone_locs.capacity() * psize;
+            size += self.fly_locs.capacity() * psize;
+            size += self.slider_locs.capacity() * psize;
+            size += self.world.data.capacity();
+            size += self.rain_locs.capacity() * psize;
+            text(&format!("MEM: {} B", size), 4, 20);
+            (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
+        }
+    }
 }
 
 static mut GM: LazyLock<GameMaster> = LazyLock::new(|| GameMaster::new());
 
 #[no_mangle]
-unsafe fn start() {
-    *PALETTE = PAL;
-    GM.world = MiniBitVec::new();
+#[allow(static_mut_refs)]
+fn start() {
+    unsafe {
+        GM.start();
+    }
 }
 
 #[no_mangle]
 #[allow(static_mut_refs)]
-unsafe fn update() {
+fn update() {
     // TODO: Frame inc can prob happen everywhere
     // UPDATE
-    if GM.screen == Screen::Start {
-        GM.seed += 1; // Increment seed while on start screen
-        if GM.input_check_any() {
-            // Seed random with current frame
-            GM.rng = Rng::with_seed(45);
-            trace(format!("set seed: {}", GM.seed));
-            GM.no_input_frames = NO_INPUT_FRAMES;
-            GM.screen = Screen::Transition;
-        }
-        GM.frame += 1;
-    } else if GM.screen == Screen::Game {
-        GM.main_logic();
-        GM.frame += 1;
-    } else if GM.screen == Screen::GameOver {
-        // *PALETTE = PAL_GAMEOVER;
-    } else if GM.screen == Screen::Shop {
-        GM.shop_logic();
-        GM.frame += 1;
-    } else if GM.screen == Screen::Transition {
-        if GM.input_check_any() {
-            GM.world_reset(false);
-            GM.diff = LVLS[GM.lvl];
-            GM.world_gen();
-            GM.screen = Screen::Game;
-        }
-    }
-    GM.no_input_frames = GM.no_input_frames.saturating_sub(1);
-
-    // DRAW
-    GM.render();
-    // NOTE: Other screens only render if active
-    // Start screen
-    GM.render_start();
-    // Game over screen
-    GM.render_gameover();
-    // Shop screen
-    GM.render_shop();
-    // Transition screen
-    GM.render_transition();
-    // Game end screen
-    GM.render_gameend();
-    // No input overlay
-    GM.draw_no_input();
-    // Debug
-    if DEBUG {
-        let dbg_string = format!(
-            "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
-            GM.frame,
-            GM.drone_locs.len(),
-            GM.fly_locs.len(),
-            GM.slider_locs.len(),
-            GM.rain_locs.len()
-        );
-        text(dbg_string.as_str(), 100, 120);
-        let psize = std::mem::size_of::<Pos>();
-        let mut size = 0;
-        size += GM.drone_locs.capacity() * psize;
-        size += GM.fly_locs.capacity() * psize;
-        size += GM.slider_locs.capacity() * psize;
-        size += GM.world.data.capacity();
-        size += GM.rain_locs.capacity() * psize;
-        text(&format!("MEM: {} B", size), 4, 20);
-        (80, 0, GM.pos.x as i32 + 4, GM.pos.y as i32);
-    }
+    unsafe { GM.update() };
 }
