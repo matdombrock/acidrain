@@ -425,7 +425,6 @@ enum Screen {
     Start,
     Game,
     GameOver,
-    GameEnd,
     Shop,
     Transition,
 }
@@ -562,6 +561,7 @@ struct GameMaster {
     cost_drill_speed: u16,
     cost_drill_cool: u16,
     purchased: u8,
+    auto_drill: bool,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -569,7 +569,7 @@ impl GameMaster {
             rng: Rng::new(),
             seed: 0,
             frame: 0,
-            lvl: 1, // Start at 1
+            lvl: 7, // Start at 1
             hp: 8,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
@@ -599,8 +599,10 @@ impl GameMaster {
             cost_drill_speed: 16,
             cost_drill_cool: 16,
             purchased: 0, // None, shop, drill speed, drill cool
+            auto_drill: true,
         }
     }
+
     fn input_check(&mut self, check: u8) -> bool {
         if self.no_input_frames > 0 {
             return false;
@@ -608,12 +610,79 @@ impl GameMaster {
         let gamepad = unsafe { *GAMEPAD1 };
         (gamepad & check) != 0
     }
+
     fn input_check_any(&mut self) -> bool {
         if self.no_input_frames > 0 {
             return false;
         }
         let gamepad = unsafe { *GAMEPAD1 };
         gamepad != 0
+    }
+
+    fn input_main(&mut self) {
+        let pos_cache = self.player_pos;
+        let mut drill_down = false;
+        self.is_drilling = false;
+        self.dir = 0;
+        if self.input_check(BUTTON_1) || self.auto_drill {
+            if !self.drill_overheat {
+                drill_down = true;
+            }
+        }
+        if self.input_check(BUTTON_LEFT) {
+            self.player_pos.x -= 1;
+            self.dir = 1;
+        }
+        if self.input_check(BUTTON_RIGHT) {
+            self.player_pos.x += 1;
+            self.dir = 2;
+        }
+        if drill_down && self.input_check(BUTTON_DOWN) {
+            self.is_drilling = true;
+            self.has_drilled = true;
+            self.dir = 3;
+            // Remove the 4 blocks under the smiley
+            self.world_drill_area(
+                (self.player_pos.x - 1) as usize,
+                (self.player_pos.y + PLAYER_SIZE as i16) as usize,
+                (PLAYER_SIZE + 2) as usize,
+                1,
+                self.drill_speed,
+            );
+        }
+
+        if drill_down && self.input_check(BUTTON_RIGHT) {
+            self.is_drilling = true;
+            self.has_drilled = true;
+            // Remove the 4 blocks to the right of the smiley
+            self.world_drill_area(
+                (self.player_pos.x + PLAYER_SIZE as i16 - 1) as usize,
+                (self.player_pos.y - 1) as usize,
+                1,
+                (PLAYER_SIZE + 1) as usize,
+                self.drill_speed,
+            );
+        }
+        if drill_down && self.input_check(BUTTON_LEFT) {
+            self.is_drilling = true;
+            self.has_drilled = true;
+            // Remove the 4 blocks to the left of the smiley
+            self.world_drill_area(
+                (self.player_pos.x) as usize,
+                (self.player_pos.y - 1) as usize,
+                1,
+                (PLAYER_SIZE + 1) as usize,
+                self.drill_speed,
+            );
+        }
+        self.player_collide_world(pos_cache);
+        let pos_cache = self.player_pos;
+        self.player_pos.y += 1;
+        if self.player_pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
+            self.player_pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
+        }
+        self.player_collide_world(pos_cache);
+        self.player_wrap();
     }
 
     fn world_reset(&mut self) {
@@ -701,7 +770,8 @@ impl GameMaster {
         }
     }
 
-    fn drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
+    // Like set area but with chance
+    fn world_drill_area(&mut self, x: usize, y: usize, w: usize, h: usize, chance: u8) {
         // Prevent overflow and out-of-bounds
         if x.checked_add(w).map_or(true, |end_x| end_x > WORLD_SIZE)
             || y.checked_add(h).map_or(true, |end_y| end_y > WORLD_SIZE)
@@ -724,6 +794,18 @@ impl GameMaster {
 
         if sfx {
             self.sfx_dig();
+        }
+    }
+
+    fn world_clear_at_player(&mut self) {
+        for dy in 0..PLAYER_SIZE as i16 {
+            for dx in 0..PLAYER_SIZE as i16 {
+                let wx = (self.player_pos.x + dx) as usize;
+                let wy = (self.player_pos.y + dy) as usize;
+                if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                    self.world_set(wx, wy, false);
+                }
+            }
         }
     }
 
@@ -781,26 +863,14 @@ impl GameMaster {
         }
     }
 
-    fn clear_at_player(&mut self) {
-        for dy in 0..PLAYER_SIZE as i16 {
-            for dx in 0..PLAYER_SIZE as i16 {
-                let wx = (self.player_pos.x + dx) as usize;
-                let wy = (self.player_pos.y + dy) as usize;
-                if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                    self.world_set(wx, wy, false);
-                }
-            }
-        }
-    }
-
     fn player_wrap(&mut self) {
         if self.player_pos.x < 0 {
             self.player_pos.x = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
-            self.clear_at_player();
+            self.world_clear_at_player();
         }
         if self.player_pos.x > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
             self.player_pos.x = 0;
-            self.clear_at_player();
+            self.world_clear_at_player();
         }
     }
 
@@ -851,72 +921,6 @@ impl GameMaster {
 
     fn sfx_deny(&mut self) {
         tone(400, 2, 128, TONE_TRIANGLE);
-    }
-
-    fn input_main(&mut self) {
-        let pos_cache = self.player_pos;
-        let mut drill_down = false;
-        self.is_drilling = false;
-        self.dir = 0;
-        if self.input_check(BUTTON_1) {
-            if !self.drill_overheat {
-                drill_down = true;
-            }
-        }
-        if self.input_check(BUTTON_LEFT) {
-            self.player_pos.x -= 1;
-            self.dir = 1;
-        }
-        if self.input_check(BUTTON_RIGHT) {
-            self.player_pos.x += 1;
-            self.dir = 2;
-        }
-        if drill_down && self.input_check(BUTTON_DOWN) {
-            self.is_drilling = true;
-            self.has_drilled = true;
-            self.dir = 3;
-            // Remove the 4 blocks under the smiley
-            self.drill_area(
-                (self.player_pos.x - 1) as usize,
-                (self.player_pos.y + PLAYER_SIZE as i16) as usize,
-                (PLAYER_SIZE + 2) as usize,
-                1,
-                self.drill_speed,
-            );
-        }
-
-        if drill_down && self.input_check(BUTTON_RIGHT) {
-            self.is_drilling = true;
-            self.has_drilled = true;
-            // Remove the 4 blocks to the right of the smiley
-            self.drill_area(
-                (self.player_pos.x + PLAYER_SIZE as i16 - 1) as usize,
-                (self.player_pos.y - 1) as usize,
-                1,
-                (PLAYER_SIZE + 1) as usize,
-                self.drill_speed,
-            );
-        }
-        if drill_down && self.input_check(BUTTON_LEFT) {
-            self.is_drilling = true;
-            self.has_drilled = true;
-            // Remove the 4 blocks to the left of the smiley
-            self.drill_area(
-                (self.player_pos.x) as usize,
-                (self.player_pos.y - 1) as usize,
-                1,
-                (PLAYER_SIZE + 1) as usize,
-                self.drill_speed,
-            );
-        }
-        self.player_collide_world(pos_cache);
-        let pos_cache = self.player_pos;
-        self.player_pos.y += 1;
-        if self.player_pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
-            self.player_pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
-        }
-        self.player_collide_world(pos_cache);
-        self.player_wrap();
     }
 
     fn update_drill(&mut self) {
@@ -1253,9 +1257,10 @@ impl GameMaster {
         let world_offset = (self.frame % split_size as u32) as usize;
         let start_y = world_offset * world_split;
         let end_y = start_y + world_split;
-        // TODO: to_fall holds a position
-        // It could just hold an index to save memory
         let mut to_fall = Vec::new();
+        // NOTE: It's technically possible for to_fall to just hold the index insead of a position
+        // This would cut the to_fall size in half
+        // But for clarity we will keep it as positions for now
         for y in (start_y..end_y).rev() {
             for x in 1..WORLD_SIZE - 1 {
                 if let Some(cell) = self.world_get(x, y) {
@@ -1307,7 +1312,7 @@ impl GameMaster {
         }
     }
 
-    fn main_logic(&mut self) {
+    fn update_main(&mut self) {
         self.input_main();
         self.player_collide_misc();
 
@@ -1325,15 +1330,21 @@ impl GameMaster {
         }
     }
 
-    fn shop_logic(&mut self) {
+    fn update_shop(&mut self) {
         fn cont(gm: &mut GameMaster) {
             gm.lvl += 1;
-            if gm.lvl >= MAX_LVL {
-                gm.lvl = 0;
-                gm.screen = Screen::GameEnd;
-            }
+            // if gm.lvl >= MAX_LVL {
+            //     gm.lvl = MAX_LVL;
+            //     gm.screen = Screen::GameOver;
+            //     return;
+            // }
             gm.no_input_frames = NO_INPUT_FRAMES;
             gm.screen = Screen::Transition;
+        }
+        // Check if we just completed the last level
+        if self.lvl >= MAX_LVL - 1 {
+            self.screen = Screen::GameOver;
+            return;
         }
         if self.purchased > 0 && self.input_check_any() {
             self.purchased = 0;
@@ -1380,7 +1391,7 @@ impl GameMaster {
         }
     }
 
-    fn draw_colors_set(&mut self, c: u16) {
+    fn colors_set(&mut self, c: u16) {
         unsafe { *DRAW_COLORS = c };
     }
 
@@ -1390,21 +1401,32 @@ impl GameMaster {
         }
     }
 
+    fn render_no_input(&mut self) {
+        if self.no_input_frames > 0 {
+            self.colors_set(2);
+            rect(0, 0, 160, 2);
+            rect(0, 158, 160, 2);
+            rect(0, 0, 2, 160);
+            rect(158, 0, 2, 160);
+            self.no_input_frames -= 1;
+        }
+    }
+
     fn render_start(&mut self) {
         if self.screen == Screen::Start {
-            self.draw_colors_set(1);
+            self.colors_set(1);
             rect(0, 0, 160, 160);
             for x in 0..5 as i32 {
                 for y in 0..8 {
                     let c = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
-                    self.draw_colors_set(c);
+                    self.colors_set(c);
                     text("ACID", x * 32, y * 20);
                     let c2 = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
-                    self.draw_colors_set(c2);
+                    self.colors_set(c2);
                     text("RAIN", x * 32, 10 + y * 20);
                 }
             }
-            self.draw_colors_set(1);
+            self.colors_set(1);
             for x in 0..5 as i32 {
                 for y in 0..8 {
                     text("ACID", 1 + x * 32, 1 + y * 20);
@@ -1420,17 +1442,17 @@ impl GameMaster {
                 let sina = (self.frame as f32 / 320.).sin() * 2.0;
                 let sin = ((self.frame as f32 / 10.) + (i as f32 / (4. + sina))).sin();
                 let y = (sin * 8.0 + 140.0) as i32;
-                self.draw_colors_set(2);
+                self.colors_set(2);
                 rect(i as i32, y, 1, (160 - y) as u32);
             }
-            self.draw_colors_set(2);
+            self.colors_set(2);
             text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
-            self.draw_colors_set(3);
+            self.colors_set(3);
             if (self.frame / 30) % 2 == 0 {
-                self.draw_colors_set(4);
+                self.colors_set(4);
             }
             text(b"PRESS \x80 TO START", 16, 105);
-            self.draw_colors_set(2);
+            self.colors_set(2);
             let x = 10;
             let y = 10;
             blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
@@ -1443,7 +1465,7 @@ impl GameMaster {
             blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
             let x = 12;
             let y = 12;
-            self.draw_colors_set(4);
+            self.colors_set(4);
             blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
             blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
             blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
@@ -1457,22 +1479,22 @@ impl GameMaster {
 
     fn render_shop(&mut self) {
         if self.screen == Screen::Shop {
-            self.draw_colors_set(1);
+            self.colors_set(1);
             rect(0, 0, 160, 160);
-            self.draw_colors_set(2);
+            self.colors_set(2);
             rect(0, 0, 160, 80);
-            self.draw_colors_set(1);
+            self.colors_set(1);
             for x in 0..160 {
                 let sina = (self.frame as f32 / 320.).sin() * 2.0;
                 let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
                 let y = (sin * 8.0 + 32.0) as i32;
                 rect(x as i32, y, 1, (160 - y) as u32);
             }
-            self.draw_colors_set(1);
+            self.colors_set(1);
             let sy = (self.frame as f32 / 8.).sin() * 2.0;
             text("UPGRADES!", 50, 6 + sy as i32);
             self.draw_gold(50, 14 + sy as i32, self.gold);
-            self.draw_colors_set(3);
+            self.colors_set(3);
             vline(115, 45, 80);
             // Up
             text(b"\x86HEART PIECE", 12, 50);
@@ -1487,15 +1509,15 @@ impl GameMaster {
             self.draw_gold(120, 110, self.cost_drill_cool);
             text(format!("{}/1024", self.drill_heat_max), 20, 120);
             // Down
-            self.draw_colors_set(4);
+            self.colors_set(4);
             hline(0, 135, 160);
             text(b"\x87NEXT  LEVEL", 30, 145);
 
             // Purchased
             if self.purchased > 0 {
-                self.draw_colors_set(1);
+                self.colors_set(1);
                 rect(0, 45, 160, 120);
-                self.draw_colors_set(4);
+                self.colors_set(4);
                 text("PURCHASED!", 12, 60);
                 match self.purchased {
                     1 => {
@@ -1512,7 +1534,7 @@ impl GameMaster {
                     }
                     _ => {}
                 }
-                self.draw_colors_set(3);
+                self.colors_set(3);
                 text(b"\x80TO CONTINUE", 12, 110);
             }
         }
@@ -1520,9 +1542,9 @@ impl GameMaster {
 
     fn render_transition(&mut self) {
         if self.screen == Screen::Transition {
-            self.draw_colors_set(1);
+            self.colors_set(1);
             rect(0, 0, 160, 160);
-            self.draw_colors_set(4);
+            self.colors_set(4);
             let trans_text = format!("LEVEL {}", self.lvl);
             text(trans_text, 50, 60);
         }
@@ -1530,48 +1552,22 @@ impl GameMaster {
 
     fn render_gameover(&mut self) {
         if self.screen == Screen::GameOver {
+            let won = self.lvl == MAX_LVL - 1;
             self.palette_set(PAL_GAMEOVER);
-            self.draw_colors_set(1);
-            // rect(0, 0, 160, 160);
-            self.draw_colors_set(4);
-            let over_text = "GAME OVER";
-            self.draw_colors_set(3);
+            self.colors_set(1);
+            rect(0, 0, 160, 160);
+            self.colors_set(4);
+            let over_text = if won { "YOU   WIN" } else { "GAME OVER" };
+            self.colors_set(2);
             text(over_text, 45, 60);
-            self.draw_colors_set(4);
+            self.colors_set(4);
             text(over_text, 46, 61);
-            self.draw_colors_set(2);
-            text(self.gold.to_string(), 10, 80);
+            self.colors_set(4);
+            self.draw_gold(50, 80, self.gold);
         }
     }
 
-    fn render_gameend(&mut self) {
-        if self.screen == Screen::GameEnd {
-            self.palette_set(PAL_GAMEOVER);
-            self.draw_colors_set(1);
-            // rect(0, 0, 160, 160);
-            self.draw_colors_set(4);
-            let over_text = "GAME END";
-            self.draw_colors_set(3);
-            text(over_text, 45, 60);
-            self.draw_colors_set(4);
-            text(over_text, 46, 61);
-            self.draw_colors_set(2);
-            text(self.gold.to_string(), 10, 80);
-        }
-    }
-
-    fn draw_no_input(&mut self) {
-        if self.no_input_frames > 0 {
-            self.draw_colors_set(2);
-            rect(0, 0, 160, 2);
-            rect(0, 158, 160, 2);
-            rect(0, 0, 2, 160);
-            rect(158, 0, 2, 160);
-            self.no_input_frames -= 1;
-        }
-    }
-
-    fn render(&mut self) {
+    fn render_main(&mut self) {
         // Always run palette change first
         // If took damage, change palette briefly
         if self.dmg_frames > 0 {
@@ -1587,7 +1583,7 @@ impl GameMaster {
 
         // Health
         for i in 0..self.hp {
-            self.draw_colors_set(3);
+            self.colors_set(3);
             // rect(45 + i as i32 * 6, 4, 4, 4);
             blit(&HEART, 76 + i as i32 * 10, 2, 8, 8, BLIT_1BPP);
         }
@@ -1596,15 +1592,15 @@ impl GameMaster {
         self.draw_gold(4, 2, self.gold);
 
         // Heat bar
-        self.draw_colors_set(2);
+        self.colors_set(2);
         let heat_bar_width = 80;
         let heat_width = (self.drill_heat as u32 * heat_bar_width) / (self.drill_heat_max as u32);
         rect(76, 12, heat_bar_width, 4);
-        self.draw_colors_set(3);
+        self.colors_set(3);
         if self.drill_overheat {
             let f = (self.frame / 10) % 2;
-            let c = (f + 3) as u16;
-            self.draw_colors_set(c);
+            let c = (f + 2) as u16;
+            self.colors_set(c);
         }
         rect(76, 12, heat_width, 4);
         // Render the world
@@ -1612,13 +1608,13 @@ impl GameMaster {
             for x in 0..WORLD_SIZE {
                 if let Some(cell) = self.world_get(x, y) {
                     if cell {
-                        self.draw_colors_set(2);
+                        self.colors_set(2);
                         rect(x as i32, y as i32, 1, 1);
                     }
                 }
             }
         }
-        self.draw_colors_set(4);
+        self.colors_set(4);
 
         // Render player
         let player_flags = match self.dir {
@@ -1685,7 +1681,7 @@ impl GameMaster {
         // Render gold locations
         let gold_frame = (self.frame / 15) % 2;
         let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
-        self.draw_colors_set(3);
+        self.colors_set(3);
         for gold in &self.gold_locs {
             // rect(gold.x as i32, gold.y as i32, 2, 2);
             blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
@@ -1694,9 +1690,9 @@ impl GameMaster {
         // Render exit
         let door_frame = (self.frame / 20) % 2;
         let door_sprite = if door_frame == 0 { &DOOR1 } else { &DOOR2 };
-        self.draw_colors_set(1);
+        self.colors_set(1);
         rect(self.exit_loc.x as i32, self.exit_loc.y as i32, 8, 8);
-        self.draw_colors_set(3);
+        self.colors_set(3);
         blit(
             door_sprite,
             self.exit_loc.x as i32,
@@ -1707,14 +1703,14 @@ impl GameMaster {
         );
 
         // Render rain
-        self.draw_colors_set(4);
+        self.colors_set(4);
         for rain in &self.rain_locs {
             rect(rain.x as i32, rain.y as i32, 1, 1);
         }
         // Render drones
         let drone_frame = (self.frame / 10) % 2;
         let drone_sprite = if drone_frame == 0 { &DRONE1 } else { &DRONE2 };
-        self.draw_colors_set(4);
+        self.colors_set(4);
         for drone in &self.drone_locs {
             // rect(drone.x as i32, drone.y as i32, 6, 4);
             blit(
@@ -1730,7 +1726,7 @@ impl GameMaster {
         // Render flies
         let fly_frame = (self.frame / 10) % 2;
         let fly_sprite = if fly_frame == 0 { &FLY1 } else { &FLY2 };
-        self.draw_colors_set(4);
+        self.colors_set(4);
         for fly in &self.fly_locs {
             // rect(fly.x as i32, fly.y as i32, 4, 4);
             blit(fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
@@ -1743,7 +1739,7 @@ impl GameMaster {
         } else {
             &SLIDER2
         };
-        self.draw_colors_set(4);
+        self.colors_set(4);
         for slider in &self.slider_locs {
             // rect(slider.x as i32, slider.y as i32, 6, 4);
             blit(
@@ -1765,7 +1761,7 @@ impl GameMaster {
                     if cell {
                         // Check if block above is empty
                         if y == 0 || self.world_get(x, y - 1) == Some(false) {
-                            self.draw_colors_set(3);
+                            self.colors_set(3);
                             rect(x as i32, y as i32, 1, 1);
                         }
                     }
@@ -1775,9 +1771,9 @@ impl GameMaster {
 
         // Help text
         if self.has_drilled == false && self.lvl == 1 {
-            self.draw_colors_set(1);
+            self.colors_set(1);
             rect(50, 50, 60, 24);
-            self.draw_colors_set(4);
+            self.colors_set(4);
             let help_text = b"\x84\x85\x87+\x80\nTO DIG";
             text(help_text, 57, 53);
         }
@@ -1788,6 +1784,7 @@ impl GameMaster {
         self.world = MiniBitVec::new();
     }
 
+    // TODO: Frame inc can happen everywhere?
     fn update(&mut self) {
         if self.screen == Screen::Start {
             self.seed += 1; // Increment seed while on start screen
@@ -1800,12 +1797,12 @@ impl GameMaster {
             }
             self.frame += 1;
         } else if self.screen == Screen::Game {
-            self.main_logic();
+            self.update_main();
             self.frame += 1;
         } else if self.screen == Screen::GameOver {
             // *PALETTE = PAL_GAMEOVER;
         } else if self.screen == Screen::Shop {
-            self.shop_logic();
+            self.update_shop();
             self.frame += 1;
         } else if self.screen == Screen::Transition {
             if self.input_check_any() {
@@ -1818,7 +1815,7 @@ impl GameMaster {
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
 
         // DRAW
-        self.render();
+        self.render_main();
         // NOTE: Other screens only render if active
         // Start screen
         self.render_start();
@@ -1828,10 +1825,8 @@ impl GameMaster {
         self.render_shop();
         // Transition screen
         self.render_transition();
-        // Game end screen
-        self.render_gameend();
         // No input overlay
-        self.draw_no_input();
+        self.render_no_input();
         // Debug
         if DEBUG {
             let dbg_string = format!(
@@ -1874,7 +1869,5 @@ fn start() {
 #[no_mangle]
 #[allow(static_mut_refs)]
 fn update() {
-    // TODO: Frame inc can prob happen everywhere
-    // UPDATE
     unsafe { GM.update() };
 }
