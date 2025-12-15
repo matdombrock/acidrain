@@ -207,6 +207,39 @@ const SLIDER2: [u8; 8] = [
     0b11111111,
 ];
 #[rustfmt::skip]
+const PU_1: [u8; 8] = [
+    0b10000001,
+    0b01111110,
+    0b01111110,
+    0b01100110,
+    0b00000000,
+    0b01111110,
+    0b01111110,
+    0b00000000,
+];
+#[rustfmt::skip]
+const PU_2: [u8; 8] = [
+    0b10000001,
+    0b01111110,
+    0b01111110,
+    0b01100110,
+    0b00000000,
+    0b01111110,
+    0b01111110,
+    0b00000000,
+];
+#[rustfmt::skip]
+const PU_MAGNET: [u8; 8] = [
+    0b00111100,
+    0b11111111,
+    0b00111100,
+    0b00111100,
+    0b10011001,
+    0b10011001,
+    0b10000001,
+    0b10000001,
+];
+#[rustfmt::skip]
 const LOGO_A: [u8; 32] = [
     0b11110000, 0b00001111,
     0b11000000, 0b00000011,
@@ -371,7 +404,6 @@ impl MiniBitVec {
     }
 
     pub fn set(&mut self, index: usize, value: bool) {
-        trace(format!("Set bit {} to {}", index, value));
         let byte_index = index / 8;
         if byte_index >= self.data.len() {
             return;
@@ -538,6 +570,12 @@ const LVLS: [LVlSettings; MAX_LVL] = [
     },
 ];
 
+enum PowerUp {
+    SuperDrill,
+    Invincible,
+    Magnet,
+}
+
 struct GameMaster {
     rng: Rng,
     seed: u64,
@@ -547,7 +585,9 @@ struct GameMaster {
     player_pos: Pos,
     dir: u8,
     world: MiniBitVec,
-    exit_loc: Pos,
+    door_loc: Pos,
+    powerup_loc: Pos,
+    powerup_taken: bool,
     gold_locs: Vec<Pos>,
     gold: u16,
     drill_speed: u8,
@@ -587,7 +627,9 @@ impl GameMaster {
                 data: Vec::new(),
                 len: 0,
             },
-            exit_loc: Pos { x: 0, y: 0 },
+            door_loc: Pos { x: 0, y: 0 },
+            powerup_loc: Pos { x: 0, y: 0 },
+            powerup_taken: false,
             gold_locs: Vec::new(),
             gold: 0,
             drill_speed: 64,
@@ -604,7 +646,7 @@ impl GameMaster {
             no_input_frames: 0,
             has_drilled: false,
             is_drilling: false,
-            screen: Screen::Transition,
+            screen: Screen::Start,
             cost_heart: 8,
             cost_drill_speed: 16,
             cost_drill_cool: 16,
@@ -738,12 +780,24 @@ impl GameMaster {
         trace("Exit");
         let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
         trace(format!("Exit: {}", exit_x));
-        self.exit_loc = Pos::new(exit_x, 152);
+        self.door_loc = Pos::new(exit_x, 152);
         self.world_set_area(
-            (self.exit_loc.x as usize).saturating_sub(4),
-            self.exit_loc.y as usize,
+            (self.door_loc.x as usize).saturating_sub(4),
+            (self.door_loc.y as usize).saturating_sub(2),
             16,
-            12,
+            14,
+            false,
+        );
+        // Powerup location
+        trace("Powerup");
+        let pu_x = self.rng.i16(0..(WORLD_SIZE as i16));
+        let pu_y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+        self.powerup_loc = Pos::new(pu_x, pu_y);
+        self.world_set_area(
+            (self.powerup_loc.x as usize).saturating_sub(4),
+            (self.powerup_loc.y as usize).saturating_sub(2),
+            16,
+            10,
             false,
         );
         // Fly locations
@@ -859,12 +913,10 @@ impl GameMaster {
         // Check for gold collection
         unsafe {
             #[allow(static_mut_refs)]
+            // TODO: THIS IS BAD
             self.gold_locs.retain(|gold| {
-                let collected = GM.player_pos.x < gold.x + 4
-                    && GM.player_pos.x + PLAYER_SIZE as i16 > gold.x
-                    && GM.player_pos.y < gold.y + 4
-                    && GM.player_pos.y + PLAYER_SIZE as i16 > gold.y;
-                if collected {
+                let collided = GM.collides_player(gold, &Pos { x: 8, y: 8 });
+                if collided {
                     GM.sfx_gold();
                     GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
                     GM.gold += 1;
@@ -875,15 +927,20 @@ impl GameMaster {
             });
         }
         // Check for collisions with doors
-        let door_collide = self.player_pos.x < self.exit_loc.x + 8
-            && self.player_pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
-            && self.player_pos.y < self.exit_loc.y + 8
-            && self.player_pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
+        let door_collide = self.collides_player(&self.door_loc, &Pos { x: 8, y: 8 });
         if door_collide {
             // Win the game (reset for now)
             self.screen_set(Screen::Shop);
             self.no_input_frames = NO_INPUT_FRAMES;
             return;
+        }
+        // Check for powerup collection
+        if !self.powerup_taken {
+            let pu_collide = self.collides_player(&self.powerup_loc, &Pos { x: 8, y: 8 });
+            if pu_collide {
+                self.powerup_taken = true;
+                self.sfx_buy();
+            }
         }
     }
 
@@ -917,13 +974,13 @@ impl GameMaster {
     fn sfx_rain(&mut self, p: &Pos) {
         let f = self.rng.u32(440..880);
         let dist = p.distance(&self.player_pos) as u32;
-        let vol = 5 + (if dist > 50 { 20 } else { 50 - dist });
+        let vol = 50 + (if dist > 50 { 20 } else { 50 - dist });
         tone(f, 0, vol, TONE_PULSE2);
     }
 
     fn sfx_gold(&mut self) {
-        let f = self.rng.u32(400..440);
-        tone(f, 4, 128, TONE_PULSE1);
+        let f = self.rng.u32(500..540);
+        tone(f | (900 << 16), 4, 128, TONE_PULSE1);
     }
 
     fn sfx_dmg(&mut self) {
@@ -940,7 +997,7 @@ impl GameMaster {
     }
 
     fn sfx_buy(&mut self) {
-        tone(600, 2, 128, TONE_TRIANGLE);
+        tone(400 | (600 << 16), 4, 128, TONE_PULSE1);
     }
 
     fn sfx_deny(&mut self) {
@@ -1196,10 +1253,9 @@ impl GameMaster {
                 }
             }
         }
-        for &i in hits_world.iter().rev() {
+        for &i in hits_world.iter() {
             let fly = self.fly_locs[i].clone();
             self.world_set_area(fly.x as usize, fly.y as usize, 8, 4, false);
-            self.sfx_rain(&fly);
         }
     }
 
@@ -1257,8 +1313,6 @@ impl GameMaster {
         for &i in hits_world.iter().rev() {
             let slider = self.slider_locs[i].clone();
             self.world_set_area(slider.x as usize, slider.y as usize, 8, 4, false);
-            self.sfx_rain(&slider);
-            // self.slider_locs.remove(i);
         }
     }
 
@@ -1406,7 +1460,7 @@ impl GameMaster {
         self.seed += 1; // Increment seed while on start screen
         if self.input_check_any() {
             // Seed random with current frame
-            self.rng = Rng::with_seed(45);
+            self.rng = Rng::with_seed(self.seed);
             trace(format!("set seed: {}", self.seed));
             self.no_input_frames = NO_INPUT_FRAMES;
             self.screen_set(Screen::Transition);
@@ -1842,16 +1896,37 @@ impl GameMaster {
         let door_frame = (self.frame / 20) % 2;
         let door_sprite = if door_frame == 0 { &DOOR1 } else { &DOOR2 };
         self.colors_set(1);
-        rect(self.exit_loc.x as i32, self.exit_loc.y as i32, 8, 8);
-        self.colors_set(3);
+        rect(self.door_loc.x as i32, self.door_loc.y as i32, 8, 8);
+        self.colors_set(4);
         blit(
             door_sprite,
-            self.exit_loc.x as i32,
-            self.exit_loc.y as i32,
+            self.door_loc.x as i32,
+            self.door_loc.y as i32,
             8,
             8,
             BLIT_1BPP,
         );
+
+        // Render powerups
+        if !self.powerup_taken {
+            let powerup_frame = (self.frame / 20) % 2;
+            let powerup_sprite = if powerup_frame == 0 { &PU_1 } else { &PU_2 };
+            let mut powerup_x = self.powerup_loc.x as i32;
+            match (self.frame / 20) % 8 {
+                6 => powerup_x += 1,
+                7 => powerup_x -= 1,
+                _ => {}
+            }
+            self.colors_set(4);
+            blit(
+                powerup_sprite,
+                powerup_x,
+                self.powerup_loc.y as i32,
+                8,
+                8,
+                BLIT_1BPP,
+            );
+        }
 
         // Render rain
         self.colors_set(4);
