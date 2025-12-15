@@ -40,6 +40,17 @@ const SMILEY3: [u8; 8] = [
     0b10011111,
 ];
 #[rustfmt::skip]
+const SMILEYDEAD: [u8; 8] = [
+    0b11111111,
+    0b11110011,
+    0b10100000,
+    0b00110100,
+    0b00000101,
+    0b00110101,
+    0b00100000,
+    0b10000000,
+];
+#[rustfmt::skip]
 const DRILL: [u8; 8] = [
     0b11111111,
     0b11111111,
@@ -643,7 +654,7 @@ impl GameMaster {
             seed: 0,
             frame: 0,
             lvl: 1,
-            hp: 8,
+            hp: 1,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
@@ -806,7 +817,7 @@ impl GameMaster {
         }
         // Exit location
         trace("Exit");
-        let exit_x = self.rng.i16(0..(WORLD_SIZE as i16));
+        let exit_x = self.rng.i16(0..(WORLD_SIZE as i16 - 12));
         trace(format!("Exit: {}", exit_x));
         self.door_loc = Pos::new(exit_x, 152);
         self.world_set_area(
@@ -1923,6 +1934,9 @@ impl GameMaster {
         };
         if self.dir == 0 {
             player_sprite = &SMILEY1;
+        }
+        if self.hp == 0 {
+            player_sprite = &SMILEYDEAD;
         }
         blit(
             player_sprite,
