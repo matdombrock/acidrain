@@ -353,8 +353,24 @@ const LOGO_N: [u8; 32] = [
     0b00001001, 0b11010000,
     0b10101001, 0b11010010,
 ];
-static PAL: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5];
+
+static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
+static PAL_CLREV: [u32; 4] = [0xd0d058, 0xa0a840, 0x708028, 0x405010]; // Classic Rev
+static PAL_CL: [u32; 4] = [0x405010, 0x708028, 0xa0a840, 0xd0d058]; // Classic
+static PAL_MOON: [u32; 4] = [0x191b1a, 0x294257, 0xa0a840, 0xd0d058]; // Moonlight
+static PAL_MOLD: [u32; 4] = [0x191b1a, 0x294257, 0x579c9a, 0x99c9b3]; // BlueMold
+static PAL_NYMPH: [u32; 4] = [0x2c2137, 0x446176, 0x3fac95, 0xa1ef8c]; // Nymph
+static PAL_SWAMP: [u32; 4] = [0x3b252e, 0x593a5f, 0x4d7d65, 0xd1ada1]; // Forgotten Swamp
+static PAL_STAR: [u32; 4] = [0x674577, 0x64b9ca, 0xffa3d6, 0xffebe5]; // Star pop
+static PAL_GBN: [u32; 4] = [0x060601, 0x0b3e08, 0x489a0d, 0xdaf222]; // GB Night
+static PAL_ML: [u32; 4] = [0x211f1f, 0x372c38, 0x7a7272, 0xababab]; // Mono logo
+static PAL_TECH: [u32; 4] = [0x1d2938, 0x2a616e, 0x13b37e, 0x07ef5c]; // Technobike
 static PAL_DMG: [u32; 4] = [0x221111, 0x551111, 0xDD1111, 0xFF1111];
+static PALS: [[u32; 4]; 11] = [
+    PAL_GBN, PAL_NYMPH, PAL_MOON, PAL_STAR, PAL_MOLD, PAL_SWAMP, PAL_ML, PAL_TECH, PAL_OG, PAL_CL,
+    PAL_CLREV,
+];
+
 static DEBUG: bool = false;
 static WORLD_SIZE: usize = 160;
 static PLAYER_SIZE: u8 = 8;
@@ -612,6 +628,7 @@ struct GameMaster {
     auto_drill: bool,
     difficulty: u8,
     gameover_acc: u8,
+    pal_index: usize,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -654,6 +671,7 @@ impl GameMaster {
             auto_drill: true,
             difficulty: 1,
             gameover_acc: 0,
+            pal_index: 0,
         }
     }
 
@@ -746,6 +764,7 @@ impl GameMaster {
         let hp = self.hp;
         let drill_speed = self.drill_speed;
         let drill_heat_max = self.drill_heat_max;
+        let pal_index = self.pal_index;
 
         *self = GameMaster::new();
 
@@ -755,6 +774,7 @@ impl GameMaster {
         self.hp = hp;
         self.drill_speed = drill_speed;
         self.drill_heat_max = drill_heat_max;
+        self.pal_index = pal_index;
     }
 
     fn world_gen(&mut self) {
@@ -989,7 +1009,7 @@ impl GameMaster {
     }
 
     fn sfx_drill_overheat(&mut self) {
-        tone(150, 60, 128, TONE_NOISE);
+        tone(150 | (220 << 16), 120, 128, TONE_NOISE);
     }
 
     fn sfx_drill_warn(&mut self) {
@@ -1458,7 +1478,14 @@ impl GameMaster {
             return;
         }
         self.seed += 1; // Increment seed while on start screen
-        if self.input_check_any() {
+        if self.input_check(BUTTON_2) {
+            self.no_input_frames = NO_INPUT_FRAMES / 2;
+            self.pal_index += 1;
+            if self.pal_index >= PALS.len() {
+                self.pal_index = 0;
+            }
+        }
+        if self.input_check(BUTTON_1) {
             // Seed random with current frame
             self.rng = Rng::with_seed(self.seed);
             trace(format!("set seed: {}", self.seed));
@@ -1779,7 +1806,7 @@ impl GameMaster {
         } else if self.gameover_acc > 0 {
             self.palette_set(PAL_DMG);
         } else {
-            self.palette_set(PAL);
+            self.palette_set(PALS[self.pal_index as usize]);
         }
 
         if self.screen != Screen::Game {
@@ -2006,7 +2033,7 @@ impl GameMaster {
     }
 
     fn start(&mut self) {
-        self.palette_set(PAL);
+        self.palette_set(PALS[self.pal_index as usize]);
         self.world = MiniBitVec::new();
     }
 
