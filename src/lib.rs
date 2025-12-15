@@ -331,6 +331,7 @@ static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
 static MAX_LVL: usize = 8;
 static DIRT_START: u8 = 24;
+static MUSIC_ENABLED: bool = false;
 
 pub struct MiniBitVec {
     data: Vec<u8>,
@@ -1392,6 +1393,9 @@ impl GameMaster {
     }
 
     fn update_music(&mut self) {
+        if !MUSIC_ENABLED {
+            return;
+        }
         if self.screen != Screen::Shop
             && self.screen != Screen::Start
             && self.screen != Screen::GameOver
