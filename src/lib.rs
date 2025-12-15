@@ -537,18 +537,17 @@ struct GameMaster {
     frame: u32,
     lvl: usize,
     hp: u8,
-    pos: Pos,
+    player_pos: Pos,
     dir: u8,
     world: MiniBitVec,
-    drill_speed: u8,
     exit_loc: Pos,
     gold_locs: Vec<Pos>,
-    gold_rained: usize,
     gold: u16,
+    drill_speed: u8,
     drill_heat_max: u16,
     drill_heat: u16,
     drill_overheat: bool,
-    diff: LVlSettings,
+    cur_lvl_data: LVlSettings,
     rain_locs: Vec<Pos>,
     drone_locs: Vec<Pos>,
     fly_locs: Vec<Pos>,
@@ -557,7 +556,6 @@ struct GameMaster {
     dmg_frames: u8,
     no_input_frames: u8,
     has_drilled: bool,
-    has_gold: bool,
     is_drilling: bool,
     screen: Screen,
     cost_heart: u16,
@@ -573,21 +571,20 @@ impl GameMaster {
             frame: 0,
             lvl: 1, // Start at 1
             hp: 8,
-            pos: Pos { x: 48, y: 0 },
+            player_pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
                 data: Vec::new(),
                 len: 0,
             },
-            drill_speed: 64,
             exit_loc: Pos { x: 0, y: 0 },
             gold_locs: Vec::new(),
-            gold_rained: 0,
             gold: 0,
+            drill_speed: 64,
             drill_heat_max: 256,
             drill_heat: 0,
             drill_overheat: false,
-            diff: LVlSettings::new(),
+            cur_lvl_data: LVlSettings::new(),
             rain_locs: Vec::new(),
             drone_locs: Vec::new(),
             fly_locs: Vec::new(),
@@ -596,7 +593,6 @@ impl GameMaster {
             dmg_frames: 0,
             no_input_frames: 0,
             has_drilled: false,
-            has_gold: false,
             is_drilling: false,
             screen: Screen::Start,
             cost_heart: 8,
@@ -620,39 +616,22 @@ impl GameMaster {
         gamepad != 0
     }
 
-    // TODO: This is a little hacky
-    // It should just use new and cache saved values
-    fn world_reset(&mut self, full: bool) {
-        // Block input for N frames
-        self.no_input_frames = 0;
-        self.screen = Screen::Shop;
-        // Reset game state
-        self.frame = 0;
-        self.pos = Pos { x: 48, y: 0 };
-        self.world = MiniBitVec::new();
-        self.exit_loc = Pos { x: 0, y: 0 };
-        self.gold_locs.clear();
-        self.gold_rained = 0;
-        self.rain_locs.clear();
-        self.player_flags_last = BLIT_1BPP;
-        self.dmg_frames = 0;
-        self.has_gold = false;
-        self.is_drilling = false;
-        self.dir = 0;
-        self.drone_locs.clear();
-        self.fly_locs.clear();
-        self.slider_locs.clear();
-        self.drill_heat = 0;
-        self.drill_overheat = false;
-        if full {
-            // Unused and not up to date
-            self.screen = Screen::Start;
-            self.gold = 0;
-            self.hp = 10;
-            self.seed = 0;
-            self.has_drilled = false;
-            self.drill_heat_max = 100;
-        }
+    fn world_reset(&mut self) {
+        let gold = self.gold;
+        let rng = self.rng.clone();
+        let lvl = self.lvl;
+        let hp = self.hp;
+        let drill_speed = self.drill_speed;
+        let drill_heat_max = self.drill_heat_max;
+
+        *self = GameMaster::new();
+
+        self.gold = gold;
+        self.rng = rng;
+        self.lvl = lvl;
+        self.hp = hp;
+        self.drill_speed = drill_speed;
+        self.drill_heat_max = drill_heat_max;
     }
 
     fn world_gen(&mut self) {
@@ -669,7 +648,7 @@ impl GameMaster {
         }
         // Generate some random gold locations
         trace("Gold");
-        for _ in 0..self.diff.gold_amt {
+        for _ in 0..self.cur_lvl_data.gold_amt {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
             self.gold_locs.push(Pos::new(x, y));
@@ -688,14 +667,14 @@ impl GameMaster {
         );
         // Fly locations
         trace("Flies");
-        for _ in 0..self.diff.fly_limit {
+        for _ in 0..self.cur_lvl_data.fly_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16 - 1));
             let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
             self.fly_locs.push(Pos::new(x, y));
         }
         // Slider locations
         trace("Sliders");
-        for _ in 0..self.diff.slider_limit {
+        for _ in 0..self.cur_lvl_data.slider_limit {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
             self.slider_locs.push(Pos::new(x, y));
@@ -753,8 +732,8 @@ impl GameMaster {
         let mut collided = false;
         for dy in 0..PLAYER_SIZE {
             for dx in 0..PLAYER_SIZE {
-                let wx = (self.pos.x + dx as i16) as usize;
-                let wy = (self.pos.y + dy as i16) as usize;
+                let wx = (self.player_pos.x + dx as i16) as usize;
+                let wy = (self.player_pos.y + dy as i16) as usize;
                 if wx < WORLD_SIZE && wy < WORLD_SIZE {
                     if let Some(cell) = self.world_get(wx, wy) {
                         if cell {
@@ -765,7 +744,7 @@ impl GameMaster {
             }
         }
         if collided {
-            self.pos = cache;
+            self.player_pos = cache;
         }
         collided
     }
@@ -775,10 +754,10 @@ impl GameMaster {
         unsafe {
             #[allow(static_mut_refs)]
             self.gold_locs.retain(|gold| {
-                let collected = GM.pos.x < gold.x + 4
-                    && GM.pos.x + PLAYER_SIZE as i16 > gold.x
-                    && GM.pos.y < gold.y + 4
-                    && GM.pos.y + PLAYER_SIZE as i16 > gold.y;
+                let collected = GM.player_pos.x < gold.x + 4
+                    && GM.player_pos.x + PLAYER_SIZE as i16 > gold.x
+                    && GM.player_pos.y < gold.y + 4
+                    && GM.player_pos.y + PLAYER_SIZE as i16 > gold.y;
                 if collected {
                     GM.sfx_gold();
                     GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
@@ -790,10 +769,10 @@ impl GameMaster {
             });
         }
         // Check for collisions with doors
-        let door_collide = self.pos.x < self.exit_loc.x + 8
-            && self.pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
-            && self.pos.y < self.exit_loc.y + 8
-            && self.pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
+        let door_collide = self.player_pos.x < self.exit_loc.x + 8
+            && self.player_pos.x + PLAYER_SIZE as i16 > self.exit_loc.x
+            && self.player_pos.y < self.exit_loc.y + 8
+            && self.player_pos.y + PLAYER_SIZE as i16 > self.exit_loc.y;
         if door_collide {
             // Win the game (reset for now)
             self.screen = Screen::Shop;
@@ -805,8 +784,8 @@ impl GameMaster {
     fn clear_at_player(&mut self) {
         for dy in 0..PLAYER_SIZE as i16 {
             for dx in 0..PLAYER_SIZE as i16 {
-                let wx = (self.pos.x + dx) as usize;
-                let wy = (self.pos.y + dy) as usize;
+                let wx = (self.player_pos.x + dx) as usize;
+                let wy = (self.player_pos.y + dy) as usize;
                 if wx < WORLD_SIZE && wy < WORLD_SIZE {
                     self.world_set(wx, wy, false);
                 }
@@ -815,12 +794,12 @@ impl GameMaster {
     }
 
     fn player_wrap(&mut self) {
-        if self.pos.x < 0 {
-            self.pos.x = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
+        if self.player_pos.x < 0 {
+            self.player_pos.x = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
             self.clear_at_player();
         }
-        if self.pos.x > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
-            self.pos.x = 0;
+        if self.player_pos.x > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
+            self.player_pos.x = 0;
             self.clear_at_player();
         }
     }
@@ -836,14 +815,14 @@ impl GameMaster {
     }
 
     fn sfx_dig(&mut self) {
-        let max = 440 - self.pos.y as u32 * 2; // 160
+        let max = 440 - self.player_pos.y as u32 * 2; // 160
         let f = self.rng.u32(120..max);
         tone(f, 0, 75, TONE_NOISE);
     }
 
     fn sfx_rain(&mut self, p: &Pos) {
         let f = self.rng.u32(440..880);
-        let dist = p.distance(&self.pos) as u32;
+        let dist = p.distance(&self.player_pos) as u32;
         let vol = 5 + (if dist > 50 { 20 } else { 50 - dist });
         tone(f, 0, vol, TONE_PULSE2);
     }
@@ -875,7 +854,7 @@ impl GameMaster {
     }
 
     fn input_main(&mut self) {
-        let pos_cache = self.pos;
+        let pos_cache = self.player_pos;
         let mut drill_down = false;
         self.is_drilling = false;
         self.dir = 0;
@@ -885,11 +864,11 @@ impl GameMaster {
             }
         }
         if self.input_check(BUTTON_LEFT) {
-            self.pos.x -= 1;
+            self.player_pos.x -= 1;
             self.dir = 1;
         }
         if self.input_check(BUTTON_RIGHT) {
-            self.pos.x += 1;
+            self.player_pos.x += 1;
             self.dir = 2;
         }
         if drill_down && self.input_check(BUTTON_DOWN) {
@@ -898,8 +877,8 @@ impl GameMaster {
             self.dir = 3;
             // Remove the 4 blocks under the smiley
             self.drill_area(
-                (self.pos.x - 1) as usize,
-                (self.pos.y + PLAYER_SIZE as i16) as usize,
+                (self.player_pos.x - 1) as usize,
+                (self.player_pos.y + PLAYER_SIZE as i16) as usize,
                 (PLAYER_SIZE + 2) as usize,
                 1,
                 self.drill_speed,
@@ -911,8 +890,8 @@ impl GameMaster {
             self.has_drilled = true;
             // Remove the 4 blocks to the right of the smiley
             self.drill_area(
-                (self.pos.x + PLAYER_SIZE as i16 - 1) as usize,
-                (self.pos.y - 1) as usize,
+                (self.player_pos.x + PLAYER_SIZE as i16 - 1) as usize,
+                (self.player_pos.y - 1) as usize,
                 1,
                 (PLAYER_SIZE + 1) as usize,
                 self.drill_speed,
@@ -923,18 +902,18 @@ impl GameMaster {
             self.has_drilled = true;
             // Remove the 4 blocks to the left of the smiley
             self.drill_area(
-                (self.pos.x) as usize,
-                (self.pos.y - 1) as usize,
+                (self.player_pos.x) as usize,
+                (self.player_pos.y - 1) as usize,
                 1,
                 (PLAYER_SIZE + 1) as usize,
                 self.drill_speed,
             );
         }
         self.player_collide_world(pos_cache);
-        let pos_cache = self.pos;
-        self.pos.y += 1;
-        if self.pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
-            self.pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
+        let pos_cache = self.player_pos;
+        self.player_pos.y += 1;
+        if self.player_pos.y > (WORLD_SIZE - PLAYER_SIZE as usize) as i16 {
+            self.player_pos.y = (WORLD_SIZE - PLAYER_SIZE as usize) as i16;
         }
         self.player_collide_world(pos_cache);
         self.player_wrap();
@@ -966,11 +945,11 @@ impl GameMaster {
 
     fn update_rain(&mut self) {
         // Add rain
-        let mut rain_chance = self.frame / self.diff.rain_chance_rte as u32;
+        let mut rain_chance = self.frame / self.cur_lvl_data.rain_chance_rte as u32;
         if rain_chance > 100 {
             rain_chance = 100;
         }
-        let mut rain_amount = self.frame / self.diff.rain_amount_rte as u32;
+        let mut rain_amount = self.frame / self.cur_lvl_data.rain_amount_rte as u32;
         if rain_amount > 10 {
             rain_amount = 10;
         }
@@ -991,8 +970,8 @@ impl GameMaster {
         for (i, rain) in self.rain_locs.iter().enumerate() {
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.pos.x + px;
-                    let py_pos = self.pos.y + py;
+                    let px_pos = self.player_pos.x + px;
+                    let py_pos = self.player_pos.y + py;
                     if px_pos == rain.x && py_pos == rain.y {
                         hits_player.push(i);
                     }
@@ -1040,7 +1019,6 @@ impl GameMaster {
                     && gold.y < (wy + 4) as i16;
                 if hit {
                     hits_gold.push(i);
-                    self.gold_rained += 1;
                 }
             }
         }
@@ -1070,8 +1048,8 @@ impl GameMaster {
 
     fn update_drones(&mut self) {
         // Add drones
-        if self.frame % self.diff.drone_rte as u32 == 0
-            && self.drone_locs.len() < self.diff.drone_limit
+        if self.frame % self.cur_lvl_data.drone_rte as u32 == 0
+            && self.drone_locs.len() < self.cur_lvl_data.drone_limit
         {
             let x = self.rng.i16(0..(WORLD_SIZE as i16));
             self.drone_locs.push(Pos::new(x, 0));
@@ -1084,9 +1062,9 @@ impl GameMaster {
         let mut trigger_sfx = false;
         let mut clear_locs: Vec<Pos> = Vec::new();
         for drone in &mut self.drone_locs {
-            let dx = self.pos.x - drone.x;
-            let dy = self.pos.y - drone.y;
-            let dist = self.pos.distance(drone);
+            let dx = self.player_pos.x - drone.x;
+            let dy = self.player_pos.y - drone.y;
+            let dist = self.player_pos.distance(drone);
             if dist > 1.0 {
                 let step_x = (dx as f32 / dist).round() as i16;
                 let step_y = (dy as f32 / dist).round() as i16;
@@ -1097,8 +1075,8 @@ impl GameMaster {
             // Check for collision with player
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.pos.x + px;
-                    let py_pos = self.pos.y + py;
+                    let px_pos = self.player_pos.x + px;
+                    let py_pos = self.player_pos.y + py;
                     if px_pos == drone.x && py_pos == drone.y {
                         trigger_sfx = true;
                     }
@@ -1164,8 +1142,8 @@ impl GameMaster {
         for (i, fly) in self.fly_locs.iter().enumerate() {
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.pos.x + px;
-                    let py_pos = self.pos.y + py;
+                    let px_pos = self.player_pos.x + px;
+                    let py_pos = self.player_pos.y + py;
                     if px_pos == fly.x && py_pos == fly.y {
                         hits_player.push(i);
                     }
@@ -1227,8 +1205,8 @@ impl GameMaster {
         for (i, slider) in self.slider_locs.iter().enumerate() {
             for py in 0..PLAYER_SIZE as i16 {
                 for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.pos.x + px;
-                    let py_pos = self.pos.y + py;
+                    let px_pos = self.player_pos.x + px;
+                    let py_pos = self.player_pos.y + py;
                     if px_pos == slider.x && py_pos == slider.y {
                         hits_player.push(i);
                     }
@@ -1313,8 +1291,8 @@ impl GameMaster {
                     let mut collide_with_player = false;
                     for dy in 0..PLAYER_SIZE as i16 {
                         for dx in 0..PLAYER_SIZE as i16 {
-                            let px = self.pos.x + dx;
-                            let py = self.pos.y + dy;
+                            let px = self.player_pos.x + dx;
+                            let py = self.player_pos.y + dy;
                             if px == x as i16 && py == (y as i16 + 1) {
                                 collide_with_player = true;
                             }
@@ -1662,8 +1640,8 @@ impl GameMaster {
         }
         blit(
             player_sprite,
-            self.pos.x as i32,
-            self.pos.y as i32,
+            self.player_pos.x as i32,
+            self.player_pos.y as i32,
             8,
             PLAYER_SIZE as u32,
             player_flags,
@@ -1696,8 +1674,8 @@ impl GameMaster {
             let drill_sprite = if drill_frame == 0 { &DRILL } else { &DRILL2 };
             blit(
                 drill_sprite,
-                (self.pos.x + drill_off.x) as i32,
-                (self.pos.y + drill_off.y) as i32,
+                (self.player_pos.x + drill_off.x) as i32,
+                (self.player_pos.y + drill_off.y) as i32,
                 8,
                 PLAYER_SIZE as u32,
                 drill_flags,
@@ -1831,8 +1809,8 @@ impl GameMaster {
             self.frame += 1;
         } else if self.screen == Screen::Transition {
             if self.input_check_any() {
-                self.world_reset(false);
-                self.diff = LVLS[self.lvl];
+                self.world_reset();
+                self.cur_lvl_data = LVLS[self.lvl];
                 self.world_gen();
                 self.screen = Screen::Game;
             }
@@ -1873,7 +1851,12 @@ impl GameMaster {
             size += self.world.data.capacity();
             size += self.rain_locs.capacity() * psize;
             text(&format!("MEM: {} B", size), 4, 20);
-            (80, 0, self.pos.x as i32 + 4, self.pos.y as i32);
+            (
+                80,
+                0,
+                self.player_pos.x as i32 + 4,
+                self.player_pos.y as i32,
+            );
         }
     }
 }
