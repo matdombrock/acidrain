@@ -379,7 +379,7 @@ static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
 static MAX_LVL: usize = 8;
 static DIRT_START: u8 = 24;
-static MUSIC_ENABLED: bool = false;
+static MUSIC_ENABLED: bool = true;
 
 pub struct MiniBitVec {
     data: Vec<u8>,
@@ -1013,7 +1013,8 @@ impl GameMaster {
     }
 
     fn sfx_drill_warn(&mut self) {
-        tone(840, 1, 128, TONE_TRIANGLE);
+        let f = (self.drill_heat as f32 / self.drill_heat_max as f32) * 300.;
+        tone(650 + f as u32, 1, 128, TONE_TRIANGLE);
     }
 
     fn sfx_buy(&mut self) {
@@ -1037,7 +1038,7 @@ impl GameMaster {
         } else {
             self.drill_heat = self.drill_heat.saturating_sub(2);
         }
-        if self.drill_heat > (self.drill_heat_max as f32 * 0.75) as u16 {
+        if self.drill_heat > (self.drill_heat_max as f32 * 0.7) as u16 && !self.drill_overheat {
             if self.frame % 8 == 0 {
                 self.sfx_drill_warn();
             }
