@@ -11,5 +11,6 @@ Bomber system is messy
 
 Ents that track player moving jank
 
-Rain generation is slightly jank
-Comes in strips when it gets full
+Sliders should drop down
+
+Chest should drop down

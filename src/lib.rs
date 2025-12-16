@@ -1940,7 +1940,7 @@ impl GameMaster {
 
     fn render_rain(&mut self) {
         for i in 0..self.rain_locs.len() {
-            self.colors_set(4);
+            self.colors_set(2);
             if self.rng.i32(0..2) == 0 {
                 self.colors_set(3);
             }
