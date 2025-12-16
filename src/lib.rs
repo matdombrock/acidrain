@@ -50,8 +50,9 @@ const SMILEYDEAD: [u8; 8] = [
     0b00100000,
     0b10000000,
 ];
+
 #[rustfmt::skip]
-const DRILL: [u8; 8] = [
+const DRILL1: [u8; 8] = [
     0b11111111,
     0b11111111,
     0b10111111,
@@ -61,7 +62,6 @@ const DRILL: [u8; 8] = [
     0b11111111,
     0b11111111,
 ];
-
 #[rustfmt::skip]
 const DRILL2: [u8; 8] = [
     0b11111111,
@@ -70,6 +70,28 @@ const DRILL2: [u8; 8] = [
     0b00000111,
     0b10001111,
     0b10111111,
+    0b11111111,
+    0b11111111,
+];
+#[rustfmt::skip]
+const DRILLD1: [u8; 8] = [
+    0b01011111,
+    0b10011111,
+    0b01001111,
+    0b11001111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+];
+#[rustfmt::skip]
+const DRILLD2: [u8; 8] = [
+    0b01011111,
+    0b10111111,
+    0b00001111,
+    0b11001111,
+    0b11111111,
+    0b11111111,
     0b11111111,
     0b11111111,
 ];
@@ -547,6 +569,7 @@ struct LVlSettings {
     drone_rte: u16,
     rain_chance_rte: u16, // Higher is less chance
     rain_amount_rte: u16, // Higher is less amount
+    rain_acidity: u8,
     gold_amt: usize,
 }
 impl LVlSettings {
@@ -560,6 +583,7 @@ impl LVlSettings {
             drone_rte: 100,
             rain_chance_rte: 100,
             rain_amount_rte: 200,
+            rain_acidity: 50,
             gold_amt: 10,
         }
     }
@@ -584,6 +608,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 100,
         rain_chance_rte: 1000,
         rain_amount_rte: 1000,
+        rain_acidity: 0,
         gold_amt: 8,
     },
     // This is the first real level
@@ -596,6 +621,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 100,
         rain_chance_rte: 400,
         rain_amount_rte: 600,
+        rain_acidity: 0,
         gold_amt: 8,
     },
     LVlSettings {
@@ -607,6 +633,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 250,
         rain_chance_rte: 300,
         rain_amount_rte: 300,
+        rain_acidity: 0,
         gold_amt: 24,
     },
     LVlSettings {
@@ -618,6 +645,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 200,
         rain_chance_rte: 200,
         rain_amount_rte: 300,
+        rain_acidity: 0,
         gold_amt: 32,
     },
     LVlSettings {
@@ -629,6 +657,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 150,
         rain_chance_rte: 100,
         rain_amount_rte: 140,
+        rain_acidity: 0,
         gold_amt: 48,
     },
     LVlSettings {
@@ -640,6 +669,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 120,
         rain_chance_rte: 60,
         rain_amount_rte: 120,
+        rain_acidity: 0,
         gold_amt: 64,
     },
     LVlSettings {
@@ -651,6 +681,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 100,
         rain_chance_rte: 50,
         rain_amount_rte: 100,
+        rain_acidity: 0,
         gold_amt: 64,
     },
     LVlSettings {
@@ -662,6 +693,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_rte: 80,
         rain_chance_rte: 40,
         rain_amount_rte: 80,
+        rain_acidity: 0,
         gold_amt: 64,
     },
 ];
@@ -682,7 +714,7 @@ struct GameMaster {
     lvl: usize,
     hp: u8,
     player_pos: Pos,
-    dir: u8,
+    dir: u8, // 0=none,1=left,2=right,3=down,4=left+down,5=right+down
     world: MiniBitVec,
     door_loc: Pos,
     powerup_loc: Pos,
@@ -703,6 +735,7 @@ struct GameMaster {
     seeker_locs: Vec<Pos>,
     bomber_locs: Vec<Pos>,
     bomber_times: Vec<u16>,
+    wind_speed: i8,
     player_flags_last: u32,
     dmg_frames: u8,
     no_input_frames: u8,
@@ -751,6 +784,7 @@ impl GameMaster {
             seeker_locs: Vec::new(),
             bomber_locs: Vec::new(),
             bomber_times: Vec::new(),
+            wind_speed: 0,
             player_flags_last: BLIT_1BPP,
             dmg_frames: 0,
             no_input_frames: 0,
@@ -787,25 +821,28 @@ impl GameMaster {
     fn input_main(&mut self) {
         let pos_cache = self.player_pos;
         let mut drill_down = false;
-        self.is_drilling = false;
-        self.dir = 0;
         if self.input_check(BUTTON_1) || self.auto_drill {
             if !self.drill_overheat {
                 drill_down = true;
             }
         }
+        self.dir = 0;
+        let mut lr = 0;
         if self.input_check(BUTTON_LEFT) {
             self.player_pos.x -= 1;
             self.dir = 1;
+            lr = 1;
         }
         if self.input_check(BUTTON_RIGHT) {
             self.player_pos.x += 1;
             self.dir = 2;
+            lr = 2;
         }
+        self.is_drilling = false;
         if drill_down && self.input_check(BUTTON_DOWN) {
             self.is_drilling = true;
             self.has_drilled = true;
-            self.dir = 3;
+            self.dir = 3 + lr;
             // Remove the 4 blocks under the smiley
             self.world_drill_area(
                 (self.player_pos.x - 1) as usize,
@@ -943,6 +980,8 @@ impl GameMaster {
             self.bomber_locs.push(Pos::new(x, y));
             self.bomber_times.push(0);
         }
+        // Wind speed
+        self.wind_speed = self.rng.i8(5..95);
     }
 
     fn world_get(&self, x: usize, y: usize) -> Option<bool> {
@@ -1025,6 +1064,23 @@ impl GameMaster {
     fn collides_player(&self, pos: &Pos, size: &Pos) -> bool {
         let player_size = Pos::new(PLAYER_SIZE as i16, PLAYER_SIZE as i16);
         self.collides(&self.player_pos, &player_size, pos, size)
+    }
+
+    fn collides_world(&self, pos: &Pos, size: &Pos) -> bool {
+        for dy in 0..size.y {
+            for dx in 0..size.x {
+                let wx = (pos.x + dx) as usize;
+                let wy = (pos.y + dy) as usize;
+                if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                    if let Some(cell) = self.world_get(wx, wy) {
+                        if cell {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn world_clear_at_player(&mut self) {
@@ -1205,6 +1261,37 @@ impl GameMaster {
         }
     }
 
+    // Basic rain update (no collisions)
+    fn update_rain_simple(&mut self, chance: u32, rate: u32, max: usize, wind: u8) {
+        // Add rain
+        let mut rain_chance = self.frame / chance;
+        if rain_chance > 100 {
+            rain_chance = 100;
+        }
+        let mut rain_amount = self.frame / rate as u32;
+        if rain_amount > 10 {
+            rain_amount = 10;
+        }
+        if self.rain_locs.len() < max {
+            for _ in 0..rain_amount {
+                if self.rng.i32(0..100) < rain_chance as i32 {
+                    let x = self.rng.i16(0..(WORLD_SIZE as i16));
+                    self.rain_locs.push(Pos::new(x, 0));
+                }
+            }
+        }
+        // Move rain
+        for rain in &mut self.rain_locs {
+            rain.y += 2;
+            if self.rng.i32(0..100) < wind as i32 {
+                rain.x += 1;
+            }
+        }
+        // Check out of bounds rain
+        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
+    }
+
+    // Rain collisions
     fn update_rain(&mut self) {
         // Add rain
         let mut rain_chance = self.frame / self.cur_lvl_data.rain_chance_rte as u32;
@@ -1223,49 +1310,43 @@ impl GameMaster {
                 }
             }
         }
-        // Update rain
+        // Move rain
         for rain in &mut self.rain_locs {
-            rain.y += 1;
+            rain.y += 2;
+            if self.rng.i32(0..100) < self.wind_speed as i32 {
+                rain.x += 1;
+            }
         }
+
+        // Check out of bounds rain
+        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
+        self.rain_locs
+            .retain(|rain| rain.x >= 0 && rain.x < WORLD_SIZE as i16);
+
         // Check for collision with player
         let mut hits_player: Vec<usize> = Vec::new();
         for (i, rain) in self.rain_locs.iter().enumerate() {
-            for py in 0..PLAYER_SIZE as i16 {
-                for px in 0..PLAYER_SIZE as i16 {
-                    let px_pos = self.player_pos.x + px;
-                    let py_pos = self.player_pos.y + py;
-                    if px_pos == rain.x && py_pos == rain.y {
-                        hits_player.push(i);
-                    }
-                }
+            let collides = self.collides_player(rain, &Pos::new(2, 2));
+            if collides {
+                hits_player.push(i);
             }
         }
         for &i in hits_player.iter().rev() {
             self.rain_locs.remove(i);
             self.player_dmg();
         }
-        // Check for collision with world
-        let mut hits_world: Vec<usize> = Vec::new();
-        for (i, rain) in self.rain_locs.iter().enumerate() {
-            let wx = rain.x as usize;
-            let wy = rain.y as usize;
-            if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                if let Some(cell) = self.world_get(wx, wy) {
-                    if cell {
-                        hits_world.push(i);
-                    }
+        // Clear world blocks
+        for i in (0..self.rain_locs.len()).rev() {
+            let rain = self.rain_locs[i].clone();
+            let hit = self.collides_world(&Pos::new(rain.x, rain.y - 1), &Pos::new(1, 2));
+            if hit {
+                // Remove rain if it hits the world
+                if self.rng.u8(0..100) > self.cur_lvl_data.rain_acidity {
+                    self.sfx_rain(&rain);
+                    self.rain_locs.remove(i);
                 }
             }
-        }
-        for &i in hits_world.iter().rev() {
-            self.world_set(
-                self.rain_locs[i].x as usize,
-                self.rain_locs[i].y as usize,
-                false,
-            );
-            let rain = self.rain_locs[i].clone();
-            self.sfx_rain(&rain);
-            self.rain_locs.remove(i);
+            self.world_set_area(rain.x as usize, rain.y as usize - 1, 1, 2, false);
         }
         // Check for collision with gold
         let mut hits_gold: Vec<usize> = Vec::new();
@@ -1293,17 +1374,14 @@ impl GameMaster {
                 !hit
             });
             // Remove a chunk of world where gold was
-            self.world_set_area(
+            self.world_set_circle(
                 self.rain_locs[i].x as usize,
                 self.rain_locs[i].y as usize,
-                8,
-                8,
+                4,
                 false,
             );
             self.rain_locs.remove(i);
         }
-        // Check out of bounds rain
-        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
     }
 
     fn update_drones(&mut self) {
@@ -1748,6 +1826,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES;
             self.screen_set(Screen::Transition);
         }
+        self.update_rain_simple(200, 60, RAIN_MAX / 2, 5);
     }
 
     fn screen_main(&mut self) {
@@ -1783,13 +1862,6 @@ impl GameMaster {
         if self.screen != Screen::Transition {
             return;
         }
-        // if self.no_input_frames == 0 {
-        //     self.world_reset();
-        //     self.cur_lvl_data = LVLS[self.lvl];
-        //     self.cur_lvl_data.apply_difficulty(self.difficulty);
-        //     self.world_gen();
-        //     self.screen_set(Screen::Game);
-        // }
         if self.input_check_any() {
             self.world_reset();
             self.cur_lvl_data = LVLS[self.lvl];
@@ -1879,6 +1951,23 @@ impl GameMaster {
         }
     }
 
+    // Only works on 8x8 sprites
+    fn sprite_frame(&self, fps: u8, frames: Vec<[u8; 8]>) -> [u8; 8] {
+        let frame_index = (self.frame / (60 / fps as u32)) % (frames.len() as u32);
+        frames[frame_index as usize]
+    }
+
+    fn render_rain(&mut self) {
+        for i in 0..self.rain_locs.len() {
+            self.colors_set(4);
+            if self.rng.i32(0..2) == 0 {
+                self.colors_set(3);
+            }
+            let rain = &self.rain_locs[i];
+            rect(rain.x as i32, rain.y as i32, 1, 1);
+        }
+    }
+
     fn render_no_input(&mut self) {
         if self.no_input_frames > 0 {
             self.colors_set(2);
@@ -1891,76 +1980,85 @@ impl GameMaster {
     }
 
     fn render_start(&mut self) {
-        if self.screen == Screen::Start {
-            self.colors_set(1);
-            rect(0, 0, 160, 160);
-            for x in 0..5 as i32 {
-                for y in 0..8 {
-                    let c = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
-                    self.colors_set(c);
-                    text("ACID", x * 32, y * 20);
-                    let c2 = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
-                    self.colors_set(c2);
-                    text("RAIN", x * 32, 10 + y * 20);
-                }
-            }
-            self.colors_set(1);
-            for x in 0..5 as i32 {
-                for y in 0..8 {
-                    text("ACID", 1 + x * 32, 1 + y * 20);
-                    text("RAIN", 1 + x * 32, 1 + 10 + y * 20);
-                }
-            }
-            if self.frame % 512 > 20 {
-                for y in 0..80 {
-                    hline(0, y * 2, 160);
-                }
-            }
-            for i in 0..160 {
-                let sina = (self.frame as f32 / 320.).sin() * 2.0;
-                let sin = ((self.frame as f32 / 10.) + (i as f32 / (4. + sina))).sin();
-                let y = (sin * 8.0 + 140.0) as i32;
-                self.colors_set(2);
-                rect(i as i32, y, 1, (160 - y) as u32);
-            }
-            self.colors_set(2);
-            text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
-            self.colors_set(3);
-            if (self.frame / 30) % 2 == 0 {
-                self.colors_set(4);
-            }
-            text(b"PRESS \x80 TO START", 16, 105);
-            self.colors_set(2);
-            let x = 10;
-            let y = 10;
-            blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
-            blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
-            blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
-            blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
-            let x = 12;
-            let y = 12;
-            self.colors_set(4);
-            blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
-            blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
-            blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
-            blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
-            blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
-            //
-            self.colors_set(3);
-            text(b"\x86BABY", 85, 20);
-            text(b"\x85EZDRILL", 85, 30);
-            text(b"\x87ARCADE", 85, 40);
-            //
-            self.colors_set(1);
-            text("GPLv3  VERSION 1.0", 10, 150);
+        if self.screen != Screen::Start {
+            return;
         }
+
+        self.colors_set(1);
+        rect(0, 0, 160, 160);
+
+        // BG acid rain text
+        for x in 0..5 as i32 {
+            for y in 0..8 {
+                let c = (x as u32 + y as u32 * self.frame / 100) as u16 % 3 + 0;
+                self.colors_set(c);
+                text("ACID", x * 32, y * 20);
+                let c2 = (x as u32 + (y as u32 * 3) * self.frame / 128) as u16 % 3 + 0;
+                self.colors_set(c2);
+                text("RAIN", x * 32, 10 + y * 20);
+            }
+        }
+        self.colors_set(1);
+        for x in 0..5 as i32 {
+            for y in 0..8 {
+                text("ACID", 1 + x * 32, 1 + y * 20);
+                text("RAIN", 1 + x * 32, 1 + 10 + y * 20);
+            }
+        }
+        // Scanlines
+        if self.frame % 512 > 20 {
+            for y in 0..80 {
+                hline(0, y * 2, 160);
+            }
+        }
+
+        self.render_rain();
+
+        // Sine
+        for i in 0..160 {
+            let sina = (self.frame as f32 / 320.).sin() * 2.0;
+            let sin = ((self.frame as f32 / 10.) + (i as f32 / (4. + sina))).sin();
+            let y = (sin * 8.0 + 140.0) as i32;
+            self.colors_set(2);
+            rect(i as i32, y, 1, (160 - y) as u32);
+        }
+        self.colors_set(2);
+        text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
+        self.colors_set(3);
+        if (self.frame / 30) % 2 == 0 {
+            self.colors_set(4);
+        }
+        text(b"PRESS \x80 TO START", 16, 105);
+        self.colors_set(2);
+        let x = 10;
+        let y = 10;
+        blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
+        blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
+        blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
+        blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
+        let x = 12;
+        let y = 12;
+        self.colors_set(4);
+        blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
+        blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
+        blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
+        blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
+        //
+        self.colors_set(3);
+        text(b"\x86BABY", 85, 20);
+        text(b"\x85EZDRILL", 85, 30);
+        text(b"\x87ARCADE", 85, 40);
+        //
+        self.colors_set(1);
+        text("GPLv3        v1.0", 13, 150);
     }
 
     fn render_shop(&mut self) {
@@ -2062,7 +2160,6 @@ impl GameMaster {
         // If took damage, change palette briefly
         if self.dmg_frames > 0 {
             self.palette_set(PAL_DMG);
-            self.dmg_frames -= 1;
         } else if self.gameover_acc > 0 {
             self.palette_set(PAL_DMG);
         } else {
@@ -2162,6 +2259,8 @@ impl GameMaster {
             1 => Pos::new(-(PLAYER_SIZE as i16), 0),
             2 => Pos::new(PLAYER_SIZE as i16, 0),
             3 => Pos::new(0, PLAYER_SIZE as i16),
+            4 => Pos::new(-8, PLAYER_SIZE as i16),
+            5 => Pos::new(PLAYER_SIZE as i16, PLAYER_SIZE as i16),
             _ => Pos::new(PLAYER_SIZE as i16, 0),
         };
         let drill_flags = match self.dir {
@@ -2169,20 +2268,25 @@ impl GameMaster {
             1 => BLIT_1BPP | BLIT_FLIP_X,
             2 => BLIT_1BPP,
             3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
+            4 => BLIT_1BPP | BLIT_FLIP_X,
+            5 => BLIT_1BPP,
             _ => BLIT_1BPP,
         };
         let drill_show = match self.dir {
             0 => false,
-            1 => true,
-            2 => true,
-            3 => true,
-            _ => false,
+            _ => true,
         };
         if drill_show && self.is_drilling {
-            let drill_frame = (self.frame / 5) % 2;
-            let drill_sprite = if drill_frame == 0 { &DRILL } else { &DRILL2 };
+            // let mut drill_sprite = if drill_frame == 0 { &DRILL1 } else { &DRILL2 };
+            let drill_sprite_n = self.sprite_frame(12, vec![DRILL1, DRILL2]);
+            let drill_sprite_d = self.sprite_frame(12, vec![DRILLD1, DRILLD2]);
+            let drill_sprite = match self.dir {
+                0..4 => drill_sprite_n,
+                4..6 => drill_sprite_d,
+                _ => drill_sprite_n,
+            };
             blit(
-                drill_sprite,
+                &drill_sprite,
                 (self.player_pos.x + drill_off.x) as i32,
                 (self.player_pos.y + drill_off.y) as i32,
                 8,
@@ -2195,8 +2299,13 @@ impl GameMaster {
         let gold_frame = (self.frame / 15) % 2;
         let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
         self.colors_set(3);
-        for gold in &self.gold_locs {
+        for i in 0..self.gold_locs.len() {
             // rect(gold.x as i32, gold.y as i32, 2, 2);
+            self.colors_set(3);
+            if (self.frame / 16) % self.gold_locs.len() as u32 == i as u32 {
+                self.colors_set(4);
+            }
+            let gold = &self.gold_locs[i];
             blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
         }
 
@@ -2237,10 +2346,7 @@ impl GameMaster {
         }
 
         // Render rain
-        self.colors_set(4);
-        for rain in &self.rain_locs {
-            rect(rain.x as i32, rain.y as i32, 1, 1);
-        }
+        self.render_rain();
         // Render drones
         let drone_frame = (self.frame / 10) % 2;
         let drone_sprite = if drone_frame == 0 { &DRONE1 } else { &DRONE2 };
@@ -2258,26 +2364,20 @@ impl GameMaster {
         }
 
         // Render flies
-        let fly_frame = (self.frame / 10) % 2;
-        let fly_sprite = if fly_frame == 0 { &FLY1 } else { &FLY2 };
+        let fly_sprite = self.sprite_frame(6, vec![FLY1, FLY2]);
         self.colors_set(4);
         for fly in &self.fly_locs {
             // rect(fly.x as i32, fly.y as i32, 4, 4);
-            blit(fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
+            blit(&fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
         }
 
         // Render sliders
-        let slider_frame = (self.frame / 10) % 2;
-        let slider_sprite = if slider_frame == 0 {
-            &SLIDER1
-        } else {
-            &SLIDER2
-        };
+        let slider_sprite = self.sprite_frame(6, vec![SLIDER1, SLIDER2]);
         self.colors_set(4);
         for slider in &self.slider_locs {
             // rect(slider.x as i32, slider.y as i32, 6, 4);
             blit(
-                slider_sprite,
+                &slider_sprite,
                 slider.x as i32,
                 slider.y as i32,
                 8,
@@ -2287,17 +2387,12 @@ impl GameMaster {
         }
 
         // Render seekers
-        let seeker_frame = (self.frame / 10) % 2;
-        let seeker_sprite = if seeker_frame == 0 {
-            &SEEKER1
-        } else {
-            &SEEKER2
-        };
+        let seeker_sprite = self.sprite_frame(6, vec![SEEKER1, SEEKER2]);
         self.colors_set(4);
         for seeker in &self.seeker_locs {
             // rect(seeker.x as i32, seeker.y as i32, 6, 4);
             blit(
-                seeker_sprite,
+                &seeker_sprite,
                 seeker.x as i32,
                 seeker.y as i32,
                 8,
@@ -2307,12 +2402,7 @@ impl GameMaster {
         }
 
         // Render bombers
-        let bomber_frame = (self.frame / 10) % 2;
-        let bomber_sprite = if bomber_frame == 0 {
-            &BOMBER1
-        } else {
-            &BOMBER2
-        };
+        let bomber_sprite = self.sprite_frame(6, vec![BOMBER1, BOMBER2]);
         let bomber_locs: Vec<_> = self.bomber_locs.iter().cloned().collect();
         for (i, bomber) in bomber_locs.iter().enumerate() {
             self.colors_set(4);
@@ -2323,7 +2413,7 @@ impl GameMaster {
                 }
             }
             blit(
-                bomber_sprite,
+                &bomber_sprite,
                 bomber.x as i32,
                 bomber.y as i32,
                 8,
@@ -2342,6 +2432,9 @@ impl GameMaster {
                         // Check if block above is empty
                         if y == 0 || self.world_get(x, y - 1) == Some(false) {
                             self.colors_set(3);
+                            if self.rng.i32(0..4) == 0 {
+                                self.colors_set(4);
+                            }
                             rect(x as i32, y as i32, 1, 1);
                         }
                     }
@@ -2383,6 +2476,8 @@ impl GameMaster {
         }
         // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
+        // Damage frames countdown
+        self.dmg_frames = self.dmg_frames.saturating_sub(1);
 
         // DRAW
         self.render_main();

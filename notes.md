@@ -8,3 +8,5 @@ usize is large, use smaller index primitives where possible
 UFOs pull back to the surface
 
 Bomber system is messy
+
+Diagonal drilling
