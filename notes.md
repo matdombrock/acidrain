@@ -14,3 +14,5 @@ Ents that track player moving jank
 Sliders should drop down
 
 Chest should drop down
+
+Cant drill right side of world
