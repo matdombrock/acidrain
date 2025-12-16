@@ -1959,7 +1959,7 @@ impl GameMaster {
             text(b"\x87ARCADE", 85, 40);
             //
             self.colors_set(1);
-            text("VERSION 1.0", 70, 150);
+            text("GPLv3  VERSION 1.0", 10, 150);
         }
     }
 
@@ -2352,10 +2352,13 @@ impl GameMaster {
         // Help text
         if self.has_drilled == false && self.lvl == 1 {
             self.colors_set(1);
-            rect(50, 50, 60, 24);
+            rect(50, 50, 60, 14);
             self.colors_set(4);
-            let help_text = b"\x84\x85\x87+\x80\nTO DIG";
-            text(help_text, 57, 53);
+            if self.frame % 32 < 16 {
+                self.colors_set(2);
+            }
+            let help_text = b"\x84\x85\x87+\x80";
+            text(help_text, 60, 53);
         }
     }
 
