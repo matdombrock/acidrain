@@ -475,21 +475,6 @@ static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = false;
 static INVINCIBLE: bool = true;
 
-const TIPS: [&[u8]; MAX_LVL] = [
-    b"ZERO ISNT REAL",
-    b"\x84\x87\x85
-MOVE
-\x84\x87\x85+\x80
-DRILL",
-    b"Hold A to\n
-    drill downwards!",
-    b"Drill sideways",
-    b"Drill sideways",
-    b"Drill sideways",
-    b"Drill sideways",
-    b"Drill sideways",
-];
-
 pub struct MiniBitVec {
     data: Vec<u8>,
     len: usize,
@@ -598,6 +583,7 @@ struct LVlSettings {
     rain_amount_rte: u16, // Higher is less amount
     rain_acidity: u8,
     gold_amt: usize,
+    text: &'static [u8],
 }
 impl LVlSettings {
     fn new() -> Self {
@@ -612,6 +598,7 @@ impl LVlSettings {
             rain_amount_rte: 200,
             rain_acidity: 50,
             gold_amt: 10,
+            text: b"",
         }
     }
     fn apply_difficulty(&mut self, difficulty: u8) {
@@ -638,6 +625,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 1000,
         rain_acidity: 0,
         gold_amt: 8,
+        text: b"\x84\x87\x85",
     },
     // This is the first real level
     LVlSettings {
@@ -651,6 +639,10 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 600,
         rain_acidity: 80,
         gold_amt: 8,
+        text: b"\x84\x87\x85
+MOVE
+\x84\x87\x85+\x80
+DRILL",
     },
     LVlSettings {
         drone_limit: 0,
@@ -663,6 +655,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 300,
         rain_acidity: 0,
         gold_amt: 24,
+        text: b"THE END?",
     },
     LVlSettings {
         drone_limit: 0,
@@ -675,6 +668,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 300,
         rain_acidity: 0,
         gold_amt: 32,
+        text: b"THE END?",
     },
     LVlSettings {
         drone_limit: 4,
@@ -687,6 +681,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 140,
         rain_acidity: 0,
         gold_amt: 48,
+        text: b"THE END?",
     },
     LVlSettings {
         drone_limit: 5,
@@ -699,6 +694,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 120,
         rain_acidity: 0,
         gold_amt: 64,
+        text: b"THE END?",
     },
     LVlSettings {
         drone_limit: 6,
@@ -711,6 +707,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 100,
         rain_acidity: 0,
         gold_amt: 64,
+        text: b"THE END?",
     },
     LVlSettings {
         drone_limit: 7,
@@ -723,6 +720,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 80,
         rain_acidity: 0,
         gold_amt: 64,
+        text: b"THE END?",
     },
 ];
 
@@ -1291,7 +1289,7 @@ impl GameMaster {
         return;
     }
 
-    fn update_drill(&mut self) {
+    fn up_drill(&mut self) {
         if self.is_drilling {
             self.drill_heat = self.drill_heat.saturating_add(1);
         } else if self.drill_overheat {
@@ -1316,7 +1314,7 @@ impl GameMaster {
     }
 
     // Basic rain update (no collisions)
-    fn update_rain_pos(&mut self, chance: u32, rate: u32, max: usize, wind: u8) {
+    fn up_rain_pos(&mut self, chance: u32, rate: u32, max: usize, wind: u8) {
         // Add rain
         let mut rain_chance = self.frame / chance;
         if rain_chance > 100 {
@@ -1348,8 +1346,8 @@ impl GameMaster {
     }
 
     // Rain collisions
-    fn update_rain_col(&mut self) {
-        self.update_rain_pos(
+    fn up_rain_col(&mut self) {
+        self.up_rain_pos(
             self.cur_lvl_data.rain_chance_rte as u32,
             self.cur_lvl_data.rain_amount_rte as u32,
             RAIN_MAX,
@@ -1417,7 +1415,7 @@ impl GameMaster {
         }
     }
 
-    fn update_drones(&mut self) {
+    fn up_drones(&mut self) {
         // Add drones
         if self.frame % self.cur_lvl_data.drone_rte as u32 == 0
             && self.drone_locs.len() < self.cur_lvl_data.drone_limit
@@ -1461,7 +1459,7 @@ impl GameMaster {
         }
     }
 
-    fn update_flies(&mut self) {
+    fn up_flies(&mut self) {
         // Check for collision with player
         let mut hits_player: Vec<usize> = Vec::new();
         for (i, fly) in self.fly_locs.iter().enumerate() {
@@ -1524,7 +1522,7 @@ impl GameMaster {
         }
     }
 
-    fn update_sliders(&mut self) {
+    fn up_sliders(&mut self) {
         // Check for collision with player
         let mut hits_player: Vec<usize> = Vec::new();
         for (i, slider) in self.slider_locs.iter().enumerate() {
@@ -1568,7 +1566,7 @@ impl GameMaster {
     }
 
     // Seekers move towards the player when the player gets close
-    fn update_seekers(&mut self) {
+    fn up_seekers(&mut self) {
         // Check for collision with player
         let mut hits_player: Vec<usize> = Vec::new();
         for (i, seeker) in self.seeker_locs.iter().enumerate() {
@@ -1605,7 +1603,7 @@ impl GameMaster {
         }
     }
 
-    fn update_bombers(&mut self) {
+    fn up_bombers(&mut self) {
         // Check for collision with player
         let mut hits: Vec<usize> = Vec::new();
         let hit_dist = 24.;
@@ -1676,7 +1674,7 @@ impl GameMaster {
     // The larger the split size the faster the world updates
     // This effects the speed of falling blocks
     // WARN: `split_size` must evenly divide `WORLD_SIZE`
-    fn update_world(&mut self) {
+    fn up_world(&mut self) {
         // If world blocks have less than 4 neighbors, they fall down
         let split_size = 4;
         let falling_limit = 160; // Max number of blocks to fall per update
@@ -1739,7 +1737,7 @@ impl GameMaster {
         }
     }
 
-    fn update_gold(&mut self) {
+    fn up_gold(&mut self) {
         if self.frame % 4 != 0 {
             return;
         }
@@ -1791,7 +1789,7 @@ impl GameMaster {
         }
     }
 
-    fn update_powerup(&mut self) {
+    fn up_powerup(&mut self) {
         // Powerups fall down
         if self.frame % 8 != 0 {
             return;
@@ -1804,7 +1802,7 @@ impl GameMaster {
         }
     }
 
-    fn update_music(&mut self) {
+    fn up_music(&mut self) {
         if !MUSIC_ENABLED {
             return;
         }
@@ -1876,7 +1874,7 @@ impl GameMaster {
         self.screen = screen;
     }
 
-    fn screen_start(&mut self) {
+    fn up_sc_start(&mut self) {
         if self.screen != Screen::Start {
             return;
         }
@@ -1896,27 +1894,27 @@ impl GameMaster {
             // Override next level screen set to transition
             self.screen_set(Screen::Transition);
         }
-        self.update_rain_pos(50, 60, RAIN_MAX / 2, 5);
+        self.up_rain_pos(50, 60, RAIN_MAX / 2, 5);
     }
 
-    fn screen_main(&mut self) {
+    fn up_sc_main(&mut self) {
         if self.screen != Screen::Game {
             return;
         }
         self.input_main();
         self.player_collide_misc();
 
-        self.update_drill();
+        self.up_drill();
 
-        self.update_rain_col();
-        self.update_drones();
-        self.update_flies();
-        self.update_sliders();
-        self.update_seekers();
-        self.update_bombers();
-        self.update_powerup();
-        self.update_gold();
-        self.update_world();
+        self.up_rain_col();
+        self.up_drones();
+        self.up_flies();
+        self.up_sliders();
+        self.up_seekers();
+        self.up_bombers();
+        self.up_powerup();
+        self.up_gold();
+        self.up_world();
 
         // Powerup frames countdown
         self.powerup_frames = self.powerup_frames.saturating_sub(1);
@@ -1937,7 +1935,7 @@ impl GameMaster {
         }
     }
 
-    fn screen_transition(&mut self) {
+    fn up_sc_transition(&mut self) {
         if self.screen != Screen::Transition {
             return;
         }
@@ -1946,7 +1944,7 @@ impl GameMaster {
         }
     }
 
-    fn screen_shop(&mut self) {
+    fn up_sc_shop(&mut self) {
         if self.screen != Screen::Shop {
             return;
         }
@@ -1996,10 +1994,10 @@ impl GameMaster {
         } else if self.input_check(BUTTON_DOWN) {
             cont(self);
         }
-        self.update_rain_pos(100, 80, RAIN_MAX / 2, 2);
+        self.up_rain_pos(100, 80, RAIN_MAX / 2, 2);
     }
 
-    fn screen_gameover(&mut self) {
+    fn up_sc_gameover(&mut self) {
         if self.screen != Screen::GameOver {
             return;
         }
@@ -2195,34 +2193,36 @@ impl GameMaster {
     }
 
     fn render_transition(&mut self) {
-        if self.screen == Screen::Transition {
-            self.colors_set(1);
-            rect(0, 0, 160, 160);
-            self.colors_set(4);
-            let trans_text = format!("DAY {}", self.lvl);
-            text(trans_text, 50, 60);
-            self.colors_set(2);
-            vline(30, 0, 160);
-            self.colors_set(2);
-            text(TIPS[self.lvl as usize], 50, 90);
+        if self.screen != Screen::Transition {
+            return;
         }
+        self.colors_set(1);
+        rect(0, 0, 160, 160);
+        self.colors_set(4);
+        let title = format!("DAY {}", self.lvl);
+        text(title, 50, 60);
+        self.colors_set(2);
+        vline(30, 0, 160);
+        self.colors_set(2);
+        text(self.cur_lvl_data.text, 50, 90);
     }
 
     fn render_gameover(&mut self) {
-        if self.screen == Screen::GameOver {
-            let won = self.lvl == MAX_LVL - 1;
-            self.palette_set(PAL_DMG);
-            self.colors_set(1);
-            rect(0, 0, 160, 160);
-            self.colors_set(4);
-            let over_text = if won { "YOU   WIN" } else { "GAME OVER" };
-            self.colors_set(2);
-            text(over_text, 45, 60);
-            self.colors_set(4);
-            text(over_text, 46, 61);
-            self.colors_set(4);
-            self.draw_gold(50, 80, self.gold);
+        if self.screen != Screen::GameOver {
+            return;
         }
+        let won = self.lvl == MAX_LVL - 1;
+        self.palette_set(PAL_DMG);
+        self.colors_set(1);
+        rect(0, 0, 160, 160);
+        self.colors_set(4);
+        let over_text = if won { "YOU   WIN" } else { "GAME OVER" };
+        self.colors_set(2);
+        text(over_text, 45, 60);
+        self.colors_set(4);
+        text(over_text, 46, 61);
+        self.colors_set(4);
+        self.draw_gold(50, 80, self.gold);
     }
 
     fn render_main(&mut self) {
@@ -2550,12 +2550,12 @@ impl GameMaster {
 
     // TODO: Frame inc can happen everywhere?
     fn update(&mut self) {
-        self.screen_start();
-        self.screen_main();
-        self.screen_gameover();
-        self.screen_shop();
-        self.screen_transition();
-        self.update_music();
+        self.up_sc_start();
+        self.up_sc_main();
+        self.up_sc_gameover();
+        self.up_sc_shop();
+        self.up_sc_transition();
+        self.up_music();
         self.frame += 1;
         // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
