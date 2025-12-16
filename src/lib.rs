@@ -1153,6 +1153,7 @@ impl GameMaster {
                 self.sfx_buy();
                 // Random powerup
                 let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
+                let pu_index = 2;
                 self.powerup_cur = POWERUP_TYPES[pu_index].clone();
                 self.powerup_frames = POWERUP_FRAMES; // 10 seconds at 60fps
             }
@@ -1269,10 +1270,10 @@ impl GameMaster {
             rain_chance = 100;
         }
         let mut rain_amount = self.frame / rate as u32;
-        if rain_amount > 10 {
-            rain_amount = 10;
+        if rain_amount > 4 {
+            rain_amount = 4;
         }
-        if self.rain_locs.len() < max {
+        if self.rain_locs.len() < max - rain_amount as usize {
             for _ in 0..rain_amount {
                 if self.rng.i32(0..100) < rain_chance as i32 {
                     let x = self.rng.i16(0..(WORLD_SIZE as i16));
@@ -1289,39 +1290,18 @@ impl GameMaster {
         }
         // Check out of bounds rain
         self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
+        self.rain_locs
+            .retain(|rain| rain.x >= 0 && rain.x < WORLD_SIZE as i16);
     }
 
     // Rain collisions
     fn update_rain(&mut self) {
-        // Add rain
-        let mut rain_chance = self.frame / self.cur_lvl_data.rain_chance_rte as u32;
-        if rain_chance > 100 {
-            rain_chance = 100;
-        }
-        let mut rain_amount = self.frame / self.cur_lvl_data.rain_amount_rte as u32;
-        if rain_amount > 10 {
-            rain_amount = 10;
-        }
-        if self.rain_locs.len() < RAIN_MAX {
-            for _ in 0..rain_amount {
-                if self.rng.i32(0..100) < rain_chance as i32 {
-                    let x = self.rng.i16(0..(WORLD_SIZE as i16));
-                    self.rain_locs.push(Pos::new(x, 0));
-                }
-            }
-        }
-        // Move rain
-        for rain in &mut self.rain_locs {
-            rain.y += 2;
-            if self.rng.i32(0..100) < self.wind_speed as i32 {
-                rain.x += 1;
-            }
-        }
-
-        // Check out of bounds rain
-        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
-        self.rain_locs
-            .retain(|rain| rain.x >= 0 && rain.x < WORLD_SIZE as i16);
+        self.update_rain_simple(
+            self.cur_lvl_data.rain_chance_rte as u32,
+            self.cur_lvl_data.rain_amount_rte as u32,
+            RAIN_MAX,
+            self.wind_speed as u8,
+        );
 
         // Check for collision with player
         let mut hits_player: Vec<usize> = Vec::new();
@@ -1703,9 +1683,10 @@ impl GameMaster {
                 let dx = self.player_pos.x - gold.x;
                 let dy = self.player_pos.y - gold.y;
                 let dist = self.player_pos.distance(gold);
-                if dist > 1. && dist < 64. {
-                    let step_x = (dx as f32 / dist).round() as i16;
-                    let step_y = (dy as f32 / dist).round() as i16;
+                // TODO: Gold moving is jank
+                if dist < 80. && dist > 1. {
+                    let step_x = (dx as f32 / dist).ceil() as i16;
+                    let step_y = (dy as f32 / dist).ceil() as i16;
                     gold.x += step_x;
                     gold.y += step_y;
                     gold.clamp_to_world();

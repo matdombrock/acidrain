@@ -9,4 +9,7 @@ UFOs pull back to the surface
 
 Bomber system is messy
 
-Diagonal drilling
+Ents that track player moving jank
+
+Rain generation is slightly jank
+Comes in strips when it gets full
