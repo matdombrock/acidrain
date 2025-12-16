@@ -1153,7 +1153,6 @@ impl GameMaster {
                 self.sfx_buy();
                 // Random powerup
                 let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
-                let pu_index = 2;
                 self.powerup_cur = POWERUP_TYPES[pu_index].clone();
                 self.powerup_frames = POWERUP_FRAMES; // 10 seconds at 60fps
             }
