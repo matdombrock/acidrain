@@ -1521,6 +1521,9 @@ impl GameMaster {
                 to_explode.push(i);
             }
         }
+        // TODO: There may be a bug here
+        // Bombers indexes may shift when removing bombers
+        // Should use a bombers_alive Vec<bool> instead
         for &i in to_explode.iter().rev() {
             let bomber = self.bomber_locs[i].clone();
             // Clear area around bomber
