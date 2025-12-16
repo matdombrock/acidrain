@@ -447,6 +447,7 @@ static POWERUP_FRAMES: u16 = 600;
 static MAX_LVL: usize = 8;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = false;
+static INVINCIBLE: bool = true;
 
 const TIPS: [&[u8]; MAX_LVL] = [
     b"ZERO ISNT REAL",
@@ -1033,8 +1034,17 @@ impl GameMaster {
         if x.checked_add(w).map_or(true, |end_x| end_x > WORLD_SIZE)
             || y.checked_add(h).map_or(true, |end_y| end_y > WORLD_SIZE)
         {
-            // Handle error or early return
-            return;
+            // NOTE: This is a pretty buggy code section
+            // It used to return early, but that caused issues when drilling near edges
+            // So now we modify w and h to fit within bounds
+            // Problems here will cause out-of-bounds panics
+
+            // Modify w and h to fit
+            let w = if x >= WORLD_SIZE { 0 } else { WORLD_SIZE - x };
+            let h = if y >= WORLD_SIZE { 0 } else { WORLD_SIZE - y };
+            if w == 0 || h == 0 {
+                return;
+            }
         }
 
         let mut sfx = false;
@@ -1170,13 +1180,15 @@ impl GameMaster {
         }
     }
 
-    fn player_dmg(&mut self) {
+    // from is for dbg
+    fn player_dmg(&mut self, from: &str) {
         if self.powerup_cur == PowerUp::Invincible {
             return;
         }
         self.dmg_frames = DMG_FRAMES;
         self.hp = self.hp.saturating_sub(1);
         self.sfx_dmg();
+        trace(format!("DMG FROM: {}: HP={}", from, self.hp));
     }
 
     fn draw_gold(&mut self, x: i32, y: i32, amt: u16) {
@@ -1312,7 +1324,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.rain_locs.remove(i);
-            self.player_dmg();
+            self.player_dmg("rain");
         }
         // Clear world blocks
         for i in (0..self.rain_locs.len()).rev() {
@@ -1381,7 +1393,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.drone_locs.remove(i);
-            self.player_dmg();
+            self.player_dmg("drone");
         }
         // Update drones every N frames
         if self.frame % 16 != 0 {
@@ -1418,7 +1430,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.fly_locs.remove(i);
-            self.player_dmg();
+            self.player_dmg("fly");
         }
         // Only move every N frames
         if self.frame % 8 != 0 {
@@ -1481,7 +1493,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.slider_locs.remove(i);
-            self.player_dmg();
+            self.player_dmg("slider");
         }
         // Only move every N frames
         if self.frame % 8 != 0 {
@@ -1525,7 +1537,7 @@ impl GameMaster {
         }
         for &i in hits_player.iter().rev() {
             self.seeker_locs.remove(i);
-            self.player_dmg();
+            self.player_dmg("seeker");
         }
         // Only move every N frames
         if self.frame % 16 != 0 {
@@ -1588,7 +1600,7 @@ impl GameMaster {
             let bomb_offset = Pos::new(bomber.x - 16, bomber.y - 16);
             let hit_player = self.collides_player(&bomb_offset, &Pos::new(32, 32));
             if hit_player {
-                self.player_dmg();
+                self.player_dmg("bomber");
             }
             self.bomber_locs.remove(i);
             self.bomber_times.remove(i);
@@ -1600,6 +1612,19 @@ impl GameMaster {
                     bomber.y + self.rng.i16(-16..17),
                 );
                 self.gold_locs.push(pos);
+            }
+        }
+
+        // Bombers fall down
+        if self.frame % 8 != 0 {
+            return;
+        }
+        for i in 0..self.bomber_locs.len() {
+            let bomber = self.bomber_locs[i].clone();
+            let collides = self.collides_world(&Pos::new(bomber.x, bomber.y + 8), &Pos::new(8, 1));
+            if !collides {
+                self.bomber_locs[i].y += 1;
+                self.bomber_locs[i].clamp_to_world();
             }
         }
     }
@@ -1718,6 +1743,19 @@ impl GameMaster {
         }
     }
 
+    fn update_powerup(&mut self) {
+        // Powerups fall down
+        if self.frame % 8 != 0 {
+            return;
+        }
+        let pu = self.powerup_loc.clone();
+        let collides = self.collides_world(&Pos::new(pu.x, pu.y + 8), &Pos::new(8, 1));
+        if !collides {
+            self.powerup_loc.y += 1;
+            self.powerup_loc.clamp_to_world();
+        }
+    }
+
     fn update_music(&mut self) {
         if !MUSIC_ENABLED {
             return;
@@ -1824,11 +1862,12 @@ impl GameMaster {
         self.update_sliders();
         self.update_seekers();
         self.update_bombers();
-        self.update_world();
+        self.update_powerup();
         self.update_gold();
+        self.update_world();
 
         // Check for game over
-        if self.hp == 0 {
+        if self.hp == 0 && !INVINCIBLE {
             self.gameover_acc += 1;
             self.no_input_frames = NO_INPUT_FRAMES;
             if self.gameover_acc > 120 {
@@ -2163,6 +2202,26 @@ impl GameMaster {
             }
         }
 
+        // Highlight the top layer of blocks
+        // TODO: This is probablly slow
+        // Really only want to highlight visible to sky
+        for x in 0..WORLD_SIZE {
+            for y in 0..WORLD_SIZE {
+                if let Some(cell) = self.world_get(x, y) {
+                    if cell {
+                        // Check if block above is empty
+                        if y == 0 || self.world_get(x, y - 1) == Some(false) {
+                            self.colors_set(3);
+                            if self.rng.i32(0..4) == 0 {
+                                self.colors_set(4);
+                            }
+                            rect(x as i32, y as i32, 1, 1);
+                        }
+                    }
+                }
+            }
+        }
+
         // Health
         for i in 0..self.hp {
             self.colors_set(3);
@@ -2200,6 +2259,24 @@ impl GameMaster {
                 PowerUp::None => "",
             };
             text(pu_text, 4, 12);
+        }
+
+        // Render invincibility overlay
+        if self.powerup_cur == PowerUp::Invincible && self.powerup_frames > 0 {
+            self.colors_set(4);
+            oval(
+                self.player_pos.x as i32 - 4,
+                self.player_pos.y as i32 - 4,
+                PLAYER_SIZE as u32 + 8,
+                PLAYER_SIZE as u32 + 8,
+            );
+            self.colors_set(1);
+            oval(
+                self.player_pos.x as i32 - 3,
+                self.player_pos.y as i32 - 3,
+                PLAYER_SIZE as u32 + 6,
+                PLAYER_SIZE as u32 + 6,
+            );
         }
 
         // Render player
@@ -2400,26 +2477,6 @@ impl GameMaster {
                 8,
                 BLIT_1BPP,
             );
-        }
-
-        // Highlight the top layer of blocks
-        // TODO: This is probablly slow
-        // Really only want to highlight visible to sky
-        for x in 0..WORLD_SIZE {
-            for y in 0..WORLD_SIZE {
-                if let Some(cell) = self.world_get(x, y) {
-                    if cell {
-                        // Check if block above is empty
-                        if y == 0 || self.world_get(x, y - 1) == Some(false) {
-                            self.colors_set(3);
-                            if self.rng.i32(0..4) == 0 {
-                                self.colors_set(4);
-                            }
-                            rect(x as i32, y as i32, 1, 1);
-                        }
-                    }
-                }
-            }
         }
 
         // Help text
