@@ -218,37 +218,70 @@ const SLIDER2: [u8; 8] = [
     0b11111111,
 ];
 #[rustfmt::skip]
-const PU_1: [u8; 8] = [
+const SEEKER1: [u8; 8] = [
+    0b00100100,
+    0b01000010,
     0b10000001,
-    0b01111110,
-    0b01111110,
-    0b01100110,
-    0b00000000,
-    0b01111110,
-    0b01111110,
-    0b00000000,
+    0b11011011,
+    0b11000011,
+    0b10000001,
+    0b01000010,
+    0b00100100,
 ];
 #[rustfmt::skip]
-const PU_2: [u8; 8] = [
+const SEEKER2: [u8; 8] = [
+    0b10100101,
+    0b00000000,
     0b10000001,
-    0b01111110,
-    0b01111110,
-    0b01100110,
+    0b11011011,
+    0b11000011,
+    0b10000001,
     0b00000000,
-    0b01111110,
-    0b01111110,
-    0b00000000,
+    0b10100101,
 ];
 #[rustfmt::skip]
-const PU_MAGNET: [u8; 8] = [
-    0b00111100,
+const BOMBER1: [u8; 8] = [
     0b11111111,
-    0b00111100,
-    0b00111100,
-    0b10011001,
-    0b10011001,
+    0b11101111,
+    0b11110111,
+    0b11100111,
     0b10000001,
+    0b01100110,
+    0b01100110,
     0b10000001,
+];
+#[rustfmt::skip]
+const BOMBER2: [u8; 8] = [
+    0b11011111,
+    0b11110111,
+    0b11101111,
+    0b11100111,
+    0b10000001,
+    0b01100110,
+    0b00000000,
+    0b10000001,
+];
+#[rustfmt::skip]
+const PU1: [u8; 8] = [
+    0b10000001,
+    0b01111110,
+    0b01111110,
+    0b01100110,
+    0b00000000,
+    0b01111110,
+    0b01111110,
+    0b00000000,
+];
+#[rustfmt::skip]
+const PU2: [u8; 8] = [
+    0b10000001,
+    0b01111110,
+    0b01111110,
+    0b01100110,
+    0b00000000,
+    0b01111110,
+    0b01111110,
+    0b00000000,
 ];
 #[rustfmt::skip]
 const LOGO_A: [u8; 32] = [
@@ -509,6 +542,8 @@ struct LVlSettings {
     drone_limit: usize,
     fly_limit: usize,
     slider_limit: usize,
+    seeker_limit: usize,
+    bomber_limit: usize,
     drone_rte: u16,
     rain_chance_rte: u16, // Higher is less chance
     rain_amount_rte: u16, // Higher is less amount
@@ -520,6 +555,8 @@ impl LVlSettings {
             drone_limit: 0,
             fly_limit: 0,
             slider_limit: 0,
+            seeker_limit: 0,
+            bomber_limit: 0,
             drone_rte: 100,
             rain_chance_rte: 100,
             rain_amount_rte: 200,
@@ -542,6 +579,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 0,
         fly_limit: 0,
         slider_limit: 0,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 100,
         rain_chance_rte: 1000,
         rain_amount_rte: 1000,
@@ -552,6 +591,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 0,
         fly_limit: 2,
         slider_limit: 0,
+        seeker_limit: 3,
+        bomber_limit: 4,
         drone_rte: 100,
         rain_chance_rte: 400,
         rain_amount_rte: 600,
@@ -561,6 +602,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 0,
         fly_limit: 3,
         slider_limit: 0,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 250,
         rain_chance_rte: 300,
         rain_amount_rte: 300,
@@ -570,6 +613,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 0,
         fly_limit: 4,
         slider_limit: 3,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 200,
         rain_chance_rte: 200,
         rain_amount_rte: 300,
@@ -579,6 +624,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 4,
         fly_limit: 5,
         slider_limit: 4,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 150,
         rain_chance_rte: 100,
         rain_amount_rte: 140,
@@ -588,6 +635,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 5,
         fly_limit: 6,
         slider_limit: 5,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 120,
         rain_chance_rte: 60,
         rain_amount_rte: 120,
@@ -597,6 +646,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 6,
         fly_limit: 7,
         slider_limit: 6,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 100,
         rain_chance_rte: 50,
         rain_amount_rte: 100,
@@ -606,6 +657,8 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         drone_limit: 7,
         fly_limit: 8,
         slider_limit: 7,
+        seeker_limit: 0,
+        bomber_limit: 0,
         drone_rte: 80,
         rain_chance_rte: 40,
         rain_amount_rte: 80,
@@ -647,6 +700,9 @@ struct GameMaster {
     drone_locs: Vec<Pos>,
     fly_locs: Vec<Pos>,
     slider_locs: Vec<Pos>,
+    seeker_locs: Vec<Pos>,
+    bomber_locs: Vec<Pos>,
+    bomber_times: Vec<u16>,
     player_flags_last: u32,
     dmg_frames: u8,
     no_input_frames: u8,
@@ -692,6 +748,9 @@ impl GameMaster {
             drone_locs: Vec::new(),
             fly_locs: Vec::new(),
             slider_locs: Vec::new(),
+            seeker_locs: Vec::new(),
+            bomber_locs: Vec::new(),
+            bomber_times: Vec::new(),
             player_flags_last: BLIT_1BPP,
             dmg_frames: 0,
             no_input_frames: 0,
@@ -869,6 +928,21 @@ impl GameMaster {
             let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
             self.slider_locs.push(Pos::new(x, y));
         }
+        // Seeker locations
+        trace("Seekers");
+        for _ in 0..self.cur_lvl_data.seeker_limit {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+            self.seeker_locs.push(Pos::new(x, y));
+        }
+        // Bomber locations
+        trace("Bombers");
+        for _ in 0..self.cur_lvl_data.bomber_limit {
+            let x = self.rng.i16(0..(WORLD_SIZE as i16));
+            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
+            self.bomber_locs.push(Pos::new(x, y));
+            self.bomber_times.push(0);
+        }
     }
 
     fn world_get(&self, x: usize, y: usize) -> Option<bool> {
@@ -887,6 +961,29 @@ impl GameMaster {
                 let wx = x + dx;
                 let wy = y + dy;
                 self.world_set(wx, wy, value);
+            }
+        }
+    }
+
+    fn world_set_circle(&mut self, x: usize, y: usize, r: usize, value: bool) {
+        let r_sq = (r * r) as i32;
+        let cx = x as i32;
+        let cy = y as i32;
+        let r_i = r as i32;
+        for dy in -r_i..=r_i {
+            for dx in -r_i..=r_i {
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq <= r_sq {
+                    let wx = cx + dx;
+                    let wy = cy + dy;
+                    if wx >= 0
+                        && wy >= 0
+                        && (wx as usize) < WORLD_SIZE
+                        && (wy as usize) < WORLD_SIZE
+                    {
+                        self.world_set(wx as usize, wy as usize, value);
+                    }
+                }
             }
         }
     }
@@ -914,7 +1011,7 @@ impl GameMaster {
         }
 
         if sfx {
-            self.sfx_dig();
+            self.sfx_drill();
         }
     }
 
@@ -1036,17 +1133,11 @@ impl GameMaster {
         text(&format!("{}", amt), x + 10, y);
     }
 
-    fn sfx_dig(&mut self) {
-        let max = 440 - self.player_pos.y as u32 * 2; // 160
-        let f = self.rng.u32(120..max);
-        tone(f, 0, 75, TONE_NOISE);
-    }
-
     fn sfx_rain(&mut self, p: &Pos) {
         let f = self.rng.u32(440..880);
         let dist = p.distance(&self.player_pos) as u32;
         let vol = 50 + (if dist > 50 { 20 } else { 50 - dist });
-        tone(f, 0, vol, TONE_PULSE2);
+        tone(f, 1, vol, TONE_PULSE2);
     }
 
     fn sfx_gold(&mut self) {
@@ -1059,6 +1150,12 @@ impl GameMaster {
         tone(f * 2 | (f << 16), 8, 128, TONE_PULSE1);
     }
 
+    fn sfx_drill(&mut self) {
+        let max = 440 - self.player_pos.y as u32 * 2; // 160
+        let f = self.rng.u32(120..max);
+        tone(f, 1, 45, TONE_NOISE);
+    }
+
     fn sfx_drill_overheat(&mut self) {
         tone(150 | (220 << 16), 120, 128, TONE_NOISE);
     }
@@ -1066,6 +1163,10 @@ impl GameMaster {
     fn sfx_drill_warn(&mut self) {
         let f = (self.drill_heat as f32 / self.drill_heat_max as f32) * 300.;
         tone(650 + f as u32, 1, 128, TONE_TRIANGLE);
+    }
+
+    fn sfx_explode(&mut self) {
+        tone(200 | (500 << 16), 60, 128, TONE_NOISE);
     }
 
     fn sfx_buy(&mut self) {
@@ -1235,7 +1336,7 @@ impl GameMaster {
             let dx = self.player_pos.x - drone.x;
             let dy = self.player_pos.y - drone.y;
             let dist = self.player_pos.distance(drone);
-            if dist > 1.0 {
+            if dist > 1. {
                 let step_x = (dx as f32 / dist).round() as i16;
                 let step_y = (dy as f32 / dist).round() as i16;
                 drone.x += step_x;
@@ -1380,6 +1481,98 @@ impl GameMaster {
         }
     }
 
+    // Seekers move towards the player when the player gets close
+    fn update_seekers(&mut self) {
+        // Check for collision with player
+        let mut hits_player: Vec<usize> = Vec::new();
+        for (i, seeker) in self.seeker_locs.iter().enumerate() {
+            let collides = self.collides_player(seeker, &Pos::new(8, 8));
+            if collides {
+                hits_player.push(i);
+            }
+        }
+        for &i in hits_player.iter().rev() {
+            self.seeker_locs.remove(i);
+            self.player_dmg();
+        }
+        // Only move every N frames
+        if self.frame % 16 != 0 {
+            return;
+        }
+        // Move towards player if close enough
+        for seeker in &mut self.seeker_locs {
+            let dx = self.player_pos.x - seeker.x;
+            let dy = self.player_pos.y - seeker.y;
+            let dist = self.player_pos.distance(seeker);
+            if dist < 64. && dist > 1. {
+                let step_x = (dx as f32 / dist).round() as i16;
+                let step_y = (dy as f32 / dist).round() as i16;
+                seeker.x += step_x;
+                seeker.y += step_y;
+                seeker.clamp_to_world();
+            }
+        }
+        // Check for collision with world
+        let mut hits_world: Vec<usize> = Vec::new();
+        for (i, seeker) in self.seeker_locs.iter().enumerate() {
+            let wx = seeker.x as usize;
+            let wy = seeker.y as usize;
+            if wx < WORLD_SIZE && wy < WORLD_SIZE {
+                if let Some(cell) = self.world_get(wx, wy) {
+                    if cell {
+                        hits_world.push(i);
+                    }
+                }
+            }
+        }
+        for &i in hits_world.iter().rev() {
+            let seeker = self.seeker_locs[i].clone();
+            self.world_set_area(seeker.x as usize, seeker.y as usize, 8, 4, false);
+        }
+    }
+
+    fn update_bombers(&mut self) {
+        // Check for collision with player
+        let mut hits: Vec<usize> = Vec::new();
+        let hit_dist = 24.;
+        for (i, bomber) in self.bomber_locs.iter().enumerate() {
+            let dist = self.player_pos.distance(bomber);
+            if dist < hit_dist {
+                hits.push(i);
+            }
+        }
+        for &i in hits.iter().rev() {
+            if self.bomber_times[i] == 0 {
+                self.bomber_times[i] = 64; // Start countdown
+            }
+        }
+        for time in &mut self.bomber_times {
+            if *time > 0 {
+                *time = time.saturating_sub(1);
+            }
+        }
+        // Bombers explode when timer reaches 1 (0 is safe state)
+        let mut to_explode: Vec<usize> = Vec::new();
+        for (i, &time) in self.bomber_times.iter().enumerate() {
+            if time == 1 {
+                to_explode.push(i);
+            }
+        }
+        for &i in to_explode.iter().rev() {
+            let bomber = self.bomber_locs[i].clone();
+            // Clear area around bomber
+            self.world_set_circle(bomber.x as usize, bomber.y as usize, 16, false);
+            let bomb_offset = Pos::new(bomber.x - 16, bomber.y - 16);
+            let hit_player = self.collides_player(&bomb_offset, &Pos::new(32, 32));
+            if hit_player {
+                self.player_dmg();
+            }
+            self.bomber_locs.remove(i);
+            self.bomber_times.remove(i);
+            self.sfx_explode();
+        }
+    }
+
     // NOTE: This is a VERY expensive operation
     // We need to split the world update over multiple frames or we will run out of memeory
     // The larger the split size the faster the world updates
@@ -1458,7 +1651,7 @@ impl GameMaster {
                 let dx = self.player_pos.x - gold.x;
                 let dy = self.player_pos.y - gold.y;
                 let dist = self.player_pos.distance(gold);
-                if dist > 1.0 && dist < 64.0 {
+                if dist > 1. && dist < 64. {
                     let step_x = (dx as f32 / dist).round() as i16;
                     let step_y = (dy as f32 / dist).round() as i16;
                     gold.x += step_x;
@@ -1578,6 +1771,8 @@ impl GameMaster {
         self.update_drones();
         self.update_flies();
         self.update_sliders();
+        self.update_seekers();
+        self.update_bombers();
         self.update_world();
         self.update_gold();
 
@@ -2031,7 +2226,7 @@ impl GameMaster {
         // Render powerups
         if !self.powerup_taken {
             let powerup_frame = (self.frame / 20) % 2;
-            let powerup_sprite = if powerup_frame == 0 { &PU_1 } else { &PU_2 };
+            let powerup_sprite = if powerup_frame == 0 { &PU1 } else { &PU2 };
             let mut powerup_x = self.powerup_loc.x as i32;
             match (self.frame / 20) % 8 {
                 6 => powerup_x += 1,
@@ -2093,6 +2288,52 @@ impl GameMaster {
                 slider_sprite,
                 slider.x as i32,
                 slider.y as i32,
+                8,
+                8,
+                BLIT_1BPP,
+            );
+        }
+
+        // Render seekers
+        let seeker_frame = (self.frame / 10) % 2;
+        let seeker_sprite = if seeker_frame == 0 {
+            &SEEKER1
+        } else {
+            &SEEKER2
+        };
+        self.colors_set(4);
+        for seeker in &self.seeker_locs {
+            // rect(seeker.x as i32, seeker.y as i32, 6, 4);
+            blit(
+                seeker_sprite,
+                seeker.x as i32,
+                seeker.y as i32,
+                8,
+                8,
+                BLIT_1BPP,
+            );
+        }
+
+        // Render bombers
+        let bomber_frame = (self.frame / 10) % 2;
+        let bomber_sprite = if bomber_frame == 0 {
+            &BOMBER1
+        } else {
+            &BOMBER2
+        };
+        let bomber_locs: Vec<_> = self.bomber_locs.iter().cloned().collect();
+        for (i, bomber) in bomber_locs.iter().enumerate() {
+            self.colors_set(4);
+            if self.bomber_times[i] > 0 {
+                self.colors_set(3);
+                if self.bomber_times[i] % 20 < 10 {
+                    self.colors_set(4);
+                }
+            }
+            blit(
+                bomber_sprite,
+                bomber.x as i32,
+                bomber.y as i32,
                 8,
                 8,
                 BLIT_1BPP,
