@@ -1826,7 +1826,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES;
             self.screen_set(Screen::Transition);
         }
-        self.update_rain_simple(200, 60, RAIN_MAX / 2, 5);
+        self.update_rain_simple(50, 60, RAIN_MAX / 2, 5);
     }
 
     fn screen_main(&mut self) {
