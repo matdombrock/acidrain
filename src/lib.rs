@@ -1331,7 +1331,6 @@ impl GameMaster {
             return;
         }
         // Move towards player
-        let mut clear_locs: Vec<Pos> = Vec::new();
         for drone in &mut self.drone_locs {
             let dx = self.player_pos.x - drone.x;
             let dy = self.player_pos.y - drone.y;
@@ -1343,11 +1342,11 @@ impl GameMaster {
                 drone.y += step_y;
                 drone.clamp_to_world();
             }
-            clear_locs.push(Pos::new(drone.x, drone.y));
         }
         // Clear world blocks
-        for loc in clear_locs {
-            self.world_set_area(loc.x as usize, loc.y as usize, 8, 4, false);
+        for i in 0..self.drone_locs.len() {
+            let drone = self.drone_locs[i].clone();
+            self.world_set_area(drone.x as usize, drone.y as usize, 8, 4, false);
         }
     }
 
@@ -1408,20 +1407,8 @@ impl GameMaster {
             fly.clamp_to_world();
         }
         // Check for collision with world
-        let mut hits_world: Vec<usize> = Vec::new();
-        for (i, fly) in self.fly_locs.iter().enumerate() {
-            let wx = fly.x as usize;
-            let wy = fly.y as usize;
-            if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                if let Some(cell) = self.world_get(wx, wy) {
-                    if cell {
-                        hits_world.push(i);
-                    }
-                }
-            }
-        }
-        for &i in hits_world.iter() {
-            let fly = self.fly_locs[i].clone();
+        for i in 0..self.fly_locs.len() {
+            let fly = &self.fly_locs[i];
             self.world_set_area(fly.x as usize, fly.y as usize, 8, 4, false);
         }
     }
@@ -1463,20 +1450,8 @@ impl GameMaster {
             }
         }
         // Check for collision with world
-        let mut hits_world: Vec<usize> = Vec::new();
-        for (i, slider) in self.slider_locs.iter().enumerate() {
-            let wx = slider.x as usize;
-            let wy = slider.y as usize;
-            if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                if let Some(cell) = self.world_get(wx, wy) {
-                    if cell {
-                        hits_world.push(i);
-                    }
-                }
-            }
-        }
-        for &i in hits_world.iter().rev() {
-            let slider = self.slider_locs[i].clone();
+        for i in 0..self.slider_locs.len() {
+            let slider = &self.slider_locs[i];
             self.world_set_area(slider.x as usize, slider.y as usize, 8, 4, false);
         }
     }
@@ -1513,20 +1488,8 @@ impl GameMaster {
             }
         }
         // Check for collision with world
-        let mut hits_world: Vec<usize> = Vec::new();
-        for (i, seeker) in self.seeker_locs.iter().enumerate() {
-            let wx = seeker.x as usize;
-            let wy = seeker.y as usize;
-            if wx < WORLD_SIZE && wy < WORLD_SIZE {
-                if let Some(cell) = self.world_get(wx, wy) {
-                    if cell {
-                        hits_world.push(i);
-                    }
-                }
-            }
-        }
-        for &i in hits_world.iter().rev() {
-            let seeker = self.seeker_locs[i].clone();
+        for i in 0..self.seeker_locs.len() {
+            let seeker = &self.seeker_locs[i];
             self.world_set_area(seeker.x as usize, seeker.y as usize, 8, 8, false);
         }
     }
