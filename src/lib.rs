@@ -725,7 +725,7 @@ impl GameMaster {
             seed: 0,
             frame: 0,
             lvl: 1,
-            hp: 1,
+            hp: 4,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
@@ -1527,7 +1527,7 @@ impl GameMaster {
         }
         for &i in hits_world.iter().rev() {
             let seeker = self.seeker_locs[i].clone();
-            self.world_set_area(seeker.x as usize, seeker.y as usize, 8, 4, false);
+            self.world_set_area(seeker.x as usize, seeker.y as usize, 8, 8, false);
         }
     }
 
@@ -1570,6 +1570,14 @@ impl GameMaster {
             self.bomber_locs.remove(i);
             self.bomber_times.remove(i);
             self.sfx_explode();
+            let drops = self.rng.i16(2..5);
+            for _ in 0..drops {
+                let pos = Pos::new(
+                    bomber.x + self.rng.i16(-16..17),
+                    bomber.y + self.rng.i16(-16..17),
+                );
+                self.gold_locs.push(pos);
+            }
         }
     }
 
@@ -1642,11 +1650,11 @@ impl GameMaster {
     }
 
     fn update_gold(&mut self) {
+        if self.frame % 4 != 0 {
+            return;
+        }
         if (self.powerup_cur == PowerUp::Magnet) && (self.powerup_frames > 0) {
             // Move gold towards player
-            if self.frame % 4 != 0 {
-                return;
-            }
             for gold in &mut self.gold_locs {
                 let dx = self.player_pos.x - gold.x;
                 let dy = self.player_pos.y - gold.y;
@@ -1665,6 +1673,24 @@ impl GameMaster {
             for (x, y) in gold_positions {
                 self.world_set_area(x as usize, y as usize, 4, 4, false);
             }
+        }
+        // Gold falls
+        let mut to_fall: Vec<usize> = Vec::new();
+        for (i, gold) in &mut self.gold_locs.iter().enumerate() {
+            let below_x = gold.x as usize;
+            let below_y = (gold.y + 4) as usize;
+            if below_x < WORLD_SIZE && below_y < WORLD_SIZE {
+                if let Some(cell) = self.world_get(below_x, below_y) {
+                    if !cell {
+                        to_fall.push(i);
+                    }
+                }
+            }
+        }
+        for gold in to_fall {
+            let g = &mut self.gold_locs[gold];
+            g.y += 1;
+            g.clamp_to_world();
         }
     }
 
