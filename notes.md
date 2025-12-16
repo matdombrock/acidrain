@@ -9,10 +9,20 @@ UFOs pull back to the surface
 
 Bomber system is messy
 
-Ents that track player moving jank
-
 Sliders should drop down
 
-Chest should drop down
+Drill up to drop stuff?
 
-Cant drill right side of world
+Wind should blow both directions
+
+Enemy collisions
+
+
+Its getting harder out here every day.
+Every dig, the rain comes stronger, faster and with more bite.
+I don't know how much longer they expect us to keep this up.
+I was just be happy to retire with some skin left...
+
+I wanna know kid, have you ever seen the rain?
+
+- ACIDMINER

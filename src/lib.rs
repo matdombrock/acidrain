@@ -1,3 +1,29 @@
+/*
+* ACIDRAIN
+* Mathieu Dombrock 2025
+* GPLv3 License
+*
+* This code is not super well written.
+* There are many things that could be optimized or cleaned up.
+* There are abstractions that should exist but don't.
+* There are abstractions that do exist but probably shouldn't.
+* Loops through ent lists are inconsistent (sometimes index based, sometimes iterator based).
+* There may be memory leaks though I've put a lot of work into avoiding them.
+* A lot of this is unsafe code due to the nature of WASM4.
+*
+* The types used on some variables are not ideal. For example, a lot of things use `usize` which is
+* pretty large for this platform. We could instead store u8 or u16 in many places and cast to usize
+* as needed.
+*
+* A major optimization that could be done is to use a more efficient data structure for storing
+* world positions. Positions are currently stored as Vec<Pos>. However, the world is stored as a
+* MiniBitVec. This means that we could store positions as indices into
+* the MiniBitVec, which would save a lot of memory and potentially speed up lookups.
+*
+* That being said, it works, and should be pretty bug free.
+*
+*/
+
 use std::sync::LazyLock;
 #[cfg(feature = "buddy-alloc")]
 mod alloc;
@@ -437,7 +463,7 @@ static PALS: [[u32; 4]; 11] = [
     PAL_CLREV,
 ];
 
-static DEBUG: bool = false;
+static GRID: bool = false;
 static WORLD_SIZE: usize = 160;
 static PLAYER_SIZE: u8 = 8;
 static RAIN_MAX: usize = 500;
@@ -600,6 +626,7 @@ impl LVlSettings {
 
 const LVLS: [LVlSettings; MAX_LVL] = [
     // Zero is not used
+    // NOTE: IDK why I built it like this
     LVlSettings {
         drone_limit: 0,
         fly_limit: 0,
@@ -616,13 +643,13 @@ const LVLS: [LVlSettings; MAX_LVL] = [
     LVlSettings {
         drone_limit: 0,
         fly_limit: 2,
-        slider_limit: 0,
+        slider_limit: 4,
         seeker_limit: 3,
         bomber_limit: 4,
         drone_rte: 100,
         rain_chance_rte: 400,
         rain_amount_rte: 600,
-        rain_acidity: 0,
+        rain_acidity: 80,
         gold_amt: 8,
     },
     LVlSettings {
@@ -713,6 +740,7 @@ struct GameMaster {
     seed: u64,
     frame: u32,
     lvl: usize,
+    difficulty: u8,
     hp: u8,
     player_pos: Pos,
     dir: u8, // 0=none,1=left,2=right,3=down,4=left+down,5=right+down
@@ -748,7 +776,6 @@ struct GameMaster {
     cost_drill_cool: u16,
     purchased: u8,
     auto_drill: bool,
-    difficulty: u8,
     gameover_acc: u8,
     pal_index: usize,
 }
@@ -758,7 +785,8 @@ impl GameMaster {
             rng: Rng::new(),
             seed: 0,
             frame: 0,
-            lvl: 1,
+            lvl: 0,
+            difficulty: 1,
             hp: 4,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
@@ -797,7 +825,6 @@ impl GameMaster {
             cost_drill_cool: 16,
             purchased: 0, // None, shop, drill speed, drill cool
             auto_drill: true,
-            difficulty: 1,
             gameover_acc: 0,
             pal_index: 0,
         }
@@ -929,7 +956,7 @@ impl GameMaster {
         }
         // Exit location
         trace("Exit");
-        let exit_x = self.rng.i16(0..(WORLD_SIZE as i16 - 12));
+        let exit_x = self.rng.i16(4..(WORLD_SIZE as i16 - 12));
         trace(format!("Exit: {}", exit_x));
         self.door_loc = Pos::new(exit_x, 152);
         self.world_set_area(
@@ -941,7 +968,7 @@ impl GameMaster {
         );
         // Powerup location
         trace("Powerup");
-        let pu_x = self.rng.i16(0..(WORLD_SIZE as i16));
+        let pu_x = self.rng.i16(4..(WORLD_SIZE as i16 - 12));
         // Only spawn at higher y
         let pu_y = self.rng.i16(DIRT_START as i16..(DIRT_START as i16 + 64));
         self.powerup_loc = Pos::new(pu_x, pu_y);
@@ -952,33 +979,36 @@ impl GameMaster {
             10,
             false,
         );
+
+        // Enemy locations
+        fn spawn_loc(rng: &mut Rng) -> Pos {
+            let min_x = 0;
+            let max_x = WORLD_SIZE as i16 - 8;
+            let min_y = DIRT_START as i16 + 4;
+            let max_y = WORLD_SIZE as i16 - 8;
+            let x = rng.i16(min_x..max_x);
+            let y = rng.i16(min_y..max_y);
+            Pos::new(x, y)
+        }
         // Fly locations
         trace("Flies");
         for _ in 0..self.cur_lvl_data.fly_limit {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16 - 1));
-            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
-            self.fly_locs.push(Pos::new(x, y));
+            self.fly_locs.push(spawn_loc(&mut self.rng));
         }
         // Slider locations
         trace("Sliders");
         for _ in 0..self.cur_lvl_data.slider_limit {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16));
-            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
-            self.slider_locs.push(Pos::new(x, y));
+            self.slider_locs.push(spawn_loc(&mut self.rng));
         }
         // Seeker locations
         trace("Seekers");
         for _ in 0..self.cur_lvl_data.seeker_limit {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16));
-            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
-            self.seeker_locs.push(Pos::new(x, y));
+            self.seeker_locs.push(spawn_loc(&mut self.rng));
         }
         // Bomber locations
         trace("Bombers");
         for _ in 0..self.cur_lvl_data.bomber_limit {
-            let x = self.rng.i16(0..(WORLD_SIZE as i16));
-            let y = self.rng.i16(DIRT_START as i16..(WORLD_SIZE as i16));
-            self.bomber_locs.push(Pos::new(x, y));
+            self.bomber_locs.push(spawn_loc(&mut self.rng));
             self.bomber_times.push(0);
         }
         // Wind speed
@@ -1150,10 +1180,7 @@ impl GameMaster {
         // Check for collisions with doors
         let door_collide = self.collides_player(&self.door_loc, &Pos { x: 8, y: 8 });
         if door_collide {
-            // Win the game (reset for now)
-            self.screen_set(Screen::Shop);
-            self.no_input_frames = NO_INPUT_FRAMES;
-            return;
+            self.next_level();
         }
         // Check for powerup collection
         if !self.powerup_taken {
@@ -1162,7 +1189,7 @@ impl GameMaster {
                 self.powerup_taken = true;
                 self.sfx_buy();
                 // Random powerup
-                let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
+                let pu_index = 2;
                 self.powerup_cur = POWERUP_TYPES[pu_index].clone();
                 self.powerup_frames = POWERUP_FRAMES; // 10 seconds at 60fps
             }
@@ -1249,6 +1276,21 @@ impl GameMaster {
         tone(166 | (220 << 16), 8, 128, TONE_PULSE2);
     }
 
+    fn next_level(&mut self) {
+        self.lvl += 1;
+        // Check if we just completed the last level
+        if self.lvl >= MAX_LVL - 1 {
+            self.screen_set(Screen::GameOver);
+            return;
+        }
+        self.world_reset();
+        self.cur_lvl_data = LVLS[self.lvl];
+        self.cur_lvl_data.apply_difficulty(self.difficulty);
+        self.world_gen();
+        self.screen_set(Screen::Shop);
+        return;
+    }
+
     fn update_drill(&mut self) {
         if self.is_drilling {
             self.drill_heat = self.drill_heat.saturating_add(1);
@@ -1274,7 +1316,7 @@ impl GameMaster {
     }
 
     // Basic rain update (no collisions)
-    fn update_rain_simple(&mut self, chance: u32, rate: u32, max: usize, wind: u8) {
+    fn update_rain_pos(&mut self, chance: u32, rate: u32, max: usize, wind: u8) {
         // Add rain
         let mut rain_chance = self.frame / chance;
         if rain_chance > 100 {
@@ -1300,14 +1342,14 @@ impl GameMaster {
             }
         }
         // Check out of bounds rain
-        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16);
+        self.rain_locs.retain(|rain| rain.y < WORLD_SIZE as i16 + 1);
         self.rain_locs
             .retain(|rain| rain.x >= 0 && rain.x < WORLD_SIZE as i16);
     }
 
     // Rain collisions
-    fn update_rain(&mut self) {
-        self.update_rain_simple(
+    fn update_rain_col(&mut self) {
+        self.update_rain_pos(
             self.cur_lvl_data.rain_chance_rte as u32,
             self.cur_lvl_data.rain_amount_rte as u32,
             RAIN_MAX,
@@ -1701,19 +1743,22 @@ impl GameMaster {
         if self.frame % 4 != 0 {
             return;
         }
+        // Magnet powerup effect
+        let mut mag_list = Vec::new();
         if (self.powerup_cur == PowerUp::Magnet) && (self.powerup_frames > 0) {
             // Move gold towards player
-            for gold in &mut self.gold_locs {
+            for (i, gold) in &mut self.gold_locs.iter_mut().enumerate() {
                 let dx = self.player_pos.x - gold.x;
                 let dy = self.player_pos.y - gold.y;
                 let dist = self.player_pos.distance(gold);
                 // TODO: Gold moving is jank
-                if dist < 80. && dist > 1. {
-                    let step_x = (dx as f32 / dist).ceil() as i16;
-                    let step_y = (dy as f32 / dist).ceil() as i16;
+                if dist < 64. && dist > 1. {
+                    let step_x = (dx as f32 / dist).round() as i16;
+                    let step_y = (dy as f32 / dist).round() as i16;
                     gold.x += step_x;
                     gold.y += step_y;
                     gold.clamp_to_world();
+                    mag_list.push(i);
                 }
             }
             // Clear world blocks where gold is
@@ -1726,6 +1771,9 @@ impl GameMaster {
         // Gold falls
         let mut to_fall: Vec<usize> = Vec::new();
         for (i, gold) in &mut self.gold_locs.iter().enumerate() {
+            if mag_list.contains(&i) {
+                continue; // Skip magnet-affected gold
+            }
             let below_x = gold.x as usize;
             let below_y = (gold.y + 4) as usize;
             if below_x < WORLD_SIZE && below_y < WORLD_SIZE {
@@ -1821,6 +1869,9 @@ impl GameMaster {
 
     fn screen_set(&mut self, screen: Screen) {
         self.frame = 0;
+        if screen != Screen::Game {
+            self.no_input_frames = NO_INPUT_FRAMES;
+        }
         self.sfx_screen_change();
         self.screen = screen;
     }
@@ -1841,10 +1892,11 @@ impl GameMaster {
             // Seed random with current frame
             self.rng = Rng::with_seed(self.seed);
             trace(format!("set seed: {}", self.seed));
-            self.no_input_frames = NO_INPUT_FRAMES;
+            self.next_level();
+            // Override next level screen set to transition
             self.screen_set(Screen::Transition);
         }
-        self.update_rain_simple(50, 60, RAIN_MAX / 2, 5);
+        self.update_rain_pos(50, 60, RAIN_MAX / 2, 5);
     }
 
     fn screen_main(&mut self) {
@@ -1856,7 +1908,7 @@ impl GameMaster {
 
         self.update_drill();
 
-        self.update_rain();
+        self.update_rain_col();
         self.update_drones();
         self.update_flies();
         self.update_sliders();
@@ -1866,10 +1918,18 @@ impl GameMaster {
         self.update_gold();
         self.update_world();
 
+        // Powerup frames countdown
+        self.powerup_frames = self.powerup_frames.saturating_sub(1);
+        if self.powerup_frames == 0 {
+            self.powerup_cur = PowerUp::None;
+        }
+
+        // Damage frames countdown
+        self.dmg_frames = self.dmg_frames.saturating_sub(1);
+
         // Check for game over
         if self.hp == 0 && !INVINCIBLE {
             self.gameover_acc += 1;
-            self.no_input_frames = NO_INPUT_FRAMES;
             if self.gameover_acc > 120 {
                 self.gameover_acc = 120;
                 self.screen_set(Screen::GameOver);
@@ -1882,10 +1942,6 @@ impl GameMaster {
             return;
         }
         if self.input_check_any() {
-            self.world_reset();
-            self.cur_lvl_data = LVLS[self.lvl];
-            self.cur_lvl_data.apply_difficulty(self.difficulty);
-            self.world_gen();
             self.screen_set(Screen::Game);
         }
     }
@@ -1895,14 +1951,7 @@ impl GameMaster {
             return;
         }
         fn cont(gm: &mut GameMaster) {
-            gm.lvl += 1;
-            gm.no_input_frames = NO_INPUT_FRAMES;
             gm.screen_set(Screen::Transition);
-        }
-        // Check if we just completed the last level
-        if self.lvl >= MAX_LVL - 1 {
-            self.screen_set(Screen::GameOver);
-            return;
         }
         if self.purchased > 0 && self.input_check_any() {
             self.purchased = 0;
@@ -1947,6 +1996,7 @@ impl GameMaster {
         } else if self.input_check(BUTTON_DOWN) {
             cont(self);
         }
+        self.update_rain_pos(100, 80, RAIN_MAX / 2, 2);
     }
 
     fn screen_gameover(&mut self) {
@@ -2084,7 +2134,7 @@ impl GameMaster {
         if self.screen == Screen::Shop {
             self.colors_set(1);
             rect(0, 0, 160, 160);
-            self.colors_set(2);
+            self.colors_set(3);
             rect(0, 0, 160, 80);
             self.colors_set(1);
             for x in 0..160 {
@@ -2093,28 +2143,29 @@ impl GameMaster {
                 let y = (sin * 8.0 + 32.0) as i32;
                 rect(x as i32, y, 1, (160 - y) as u32);
             }
+            self.render_rain();
             self.colors_set(1);
             let sy = (self.frame as f32 / 8.).sin() * 2.0;
-            text("UPGRADES!", 50, 6 + sy as i32);
+            text("UPGRADES!", 48, 6 + sy as i32);
             self.draw_gold(50, 14 + sy as i32, self.gold);
             self.colors_set(3);
             vline(115, 45, 80);
             // Up
-            text(b"\x86HEART PIECE", 12, 50);
+            text(b"\x86HEART PIECE", 15, 50);
             self.draw_gold(120, 50, self.cost_heart);
-            text(format!("{}/8", self.hp), 20, 60);
+            text(format!("{}/8", self.hp), 24, 60);
             // Left
-            text(b"\x84DRILL SPEED", 12, 80);
+            text(b"\x84DRILL SPEED", 15, 80);
             self.draw_gold(120, 80, self.cost_drill_speed);
-            text(format!("{}/128", self.drill_speed), 20, 90);
+            text(format!("{}/128", self.drill_speed), 24, 90);
             // Righ
-            text(b"\x85DRILL COOLR", 12, 110);
+            text(b"\x85DRILL COOLR", 15, 110);
             self.draw_gold(120, 110, self.cost_drill_cool);
-            text(format!("{}/1024", self.drill_heat_max), 20, 120);
+            text(format!("{}/1024", self.drill_heat_max), 24, 120);
             // Down
             self.colors_set(4);
             hline(0, 135, 160);
-            text(b"\x87NEXT  LEVEL", 30, 145);
+            text(b"\x87NEXT  LEVEL", 33, 145);
 
             // Purchased
             if self.purchased > 0 {
@@ -2148,7 +2199,7 @@ impl GameMaster {
             self.colors_set(1);
             rect(0, 0, 160, 160);
             self.colors_set(4);
-            let trans_text = format!("LEVEL {}", self.lvl);
+            let trans_text = format!("DAY {}", self.lvl);
             text(trans_text, 50, 60);
             self.colors_set(2);
             vline(30, 0, 160);
@@ -2506,15 +2557,8 @@ impl GameMaster {
         self.screen_transition();
         self.update_music();
         self.frame += 1;
-        // Powerup frames countdown
-        self.powerup_frames = self.powerup_frames.saturating_sub(1);
-        if self.powerup_frames == 0 {
-            self.powerup_cur = PowerUp::None;
-        }
         // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
-        // Damage frames countdown
-        self.dmg_frames = self.dmg_frames.saturating_sub(1);
 
         // DRAW
         self.render_main();
@@ -2530,30 +2574,18 @@ impl GameMaster {
         // No input overlay
         self.render_no_input();
         // Debug
-        if DEBUG {
-            let dbg_string = format!(
-                "FR:{}\nDR:{}\nFL:{}\nSL:{}\nRN:{}",
-                self.frame,
-                self.drone_locs.len(),
-                self.fly_locs.len(),
-                self.slider_locs.len(),
-                self.rain_locs.len()
-            );
-            text(dbg_string.as_str(), 100, 120);
-            let psize = std::mem::size_of::<Pos>();
-            let mut size = 0;
-            size += self.drone_locs.capacity() * psize;
-            size += self.fly_locs.capacity() * psize;
-            size += self.slider_locs.capacity() * psize;
-            size += self.world.data.capacity();
-            size += self.rain_locs.capacity() * psize;
-            text(&format!("MEM: {} B", size), 4, 20);
-            (
-                80,
-                0,
-                self.player_pos.x as i32 + 4,
-                self.player_pos.y as i32,
-            );
+        if GRID {
+            self.colors_set(4);
+            if self.frame % 32 < 16 {
+                self.colors_set(0);
+            }
+            let grid = 16;
+            for x in 0..WORLD_SIZE / grid {
+                vline((x * grid) as i32, 0, WORLD_SIZE as u32);
+            }
+            for y in 0..WORLD_SIZE / grid {
+                hline(0, (y * grid) as i32, WORLD_SIZE as u32);
+            }
         }
     }
 }
