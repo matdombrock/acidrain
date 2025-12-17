@@ -665,7 +665,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         seeker_limit: 0,
         bomber_limit: 2,
         drone_rte: 100,
-        rain_chance_rte: 400,
+        rain_chance_rte: 600,
         rain_amount_rte: 600,
         rain_acidity: 0,
         gold_amt: 8,
@@ -1225,7 +1225,9 @@ impl GameMaster {
                 // Random powerup
                 let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
                 self.powerup_cur = POWERUP_TYPES[pu_index].clone();
-                self.powerup_frames = POWERUP_FRAMES; // 10 seconds at 60fps
+                // 10 seconds at 60fps
+                self.powerup_frames = POWERUP_FRAMES;
+                // Give 1 HP if invincible
                 if self.powerup_cur == PowerUp::Invincible {
                     self.hp += 1;
                     if self.hp > MAX_HP {
@@ -2648,11 +2650,28 @@ impl GameMaster {
         }
         self.colors_set(1);
         rect(0, 0, 160, 160);
+
         self.colors_set(4);
-        let title = format!("DAY {}", self.lvl);
-        text(title, 66, 60);
+        text(format!("DAY {}", self.lvl), 62, 20);
+        hline(62, 30, 60);
         self.colors_set(2);
-        text(self.cur_lvl_data.text, 66, 80);
+        text(self.cur_lvl_data.text, 62, 40);
+
+        self.colors_set(3);
+        text("WEATHER", 62, 90);
+        hline(62, 100, 60);
+        self.colors_set(2);
+        text(format!("WIND: {}>>", self.wind_speed), 62, 110);
+        text(
+            format!("ACID: {}%", self.cur_lvl_data.rain_acidity),
+            62,
+            120,
+        );
+        let mut rain_v =
+            (self.cur_lvl_data.rain_chance_rte + self.cur_lvl_data.rain_amount_rte) / 20;
+        rain_v = 100 - rain_v;
+        text(format!("RAIN: {}%", rain_v), 62, 130);
+
         // TODO: This is a bit CPU intensive
         // Sine
         self.colors_set(2);

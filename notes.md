@@ -30,5 +30,3 @@ I wanna know kid, have you ever seen the rain?
 - ACIDMINER
 
 
-balls glow when near instead of randomly
-inv gives a heart
