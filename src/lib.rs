@@ -77,7 +77,7 @@ much longer they
 expect us to keep
 this up.
 
-I was just be happy
+I was just happy
 to retire with some
 skin left...
 
