@@ -1843,16 +1843,16 @@ impl GameMaster {
             return;
         }
         fn p1(note: u32, vol: u32) {
-            tone(note, 1, vol, TONE_PULSE1 | TONE_NOTE_MODE);
+            tone(note, 4, vol, TONE_PULSE1 | TONE_NOTE_MODE);
         }
         fn p2(note: u32, vol: u32) {
-            tone(note, 1, vol, TONE_PULSE2 | TONE_NOTE_MODE);
+            tone(note, 4, vol, TONE_PULSE2 | TONE_NOTE_MODE);
         }
         fn p3(note: u32, vol: u32) {
-            tone(note, 1, vol, TONE_TRIANGLE | TONE_NOTE_MODE);
+            tone(note, 4, vol, TONE_TRIANGLE | TONE_NOTE_MODE);
         }
         fn p4(note: u32, vol: u32) {
-            tone(note, 1, vol, TONE_NOISE | TONE_NOTE_MODE);
+            tone(note, 4, vol, TONE_NOISE | TONE_NOTE_MODE);
         }
         if self.screen == Screen::Intro {
             // Simple intro jingle
