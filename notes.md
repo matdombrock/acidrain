@@ -17,6 +17,8 @@ Wind should blow both directions
 
 Enemy collisions
 
+Could show dmg cause on screen
+
 
 Its getting harder out here every day.
 Every dig, the rain comes stronger, faster and with more bite.
