@@ -2534,7 +2534,7 @@ impl GameMaster {
             self.colors_set(4);
         }
         let sx = ((self.frame as f32 / 8.).sin() * 2.0) as i32;
-        text(b"PRESS \x80 TO START", 16 + sx, 105);
+        text(b"PRESS \x80 TO START", 17 + sx, 105);
         self.colors_set(3);
         let x = 10;
         let y = 10;
