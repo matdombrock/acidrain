@@ -28,3 +28,7 @@ I was just be happy to retire with some skin left...
 I wanna know kid, have you ever seen the rain?
 
 - ACIDMINER
+
+
+balls glow when near instead of randomly
+inv gives a heart

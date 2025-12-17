@@ -41,6 +41,7 @@ static NO_INPUT_FRAMES: u8 = 120;
 static POWERUP_FRAMES: u16 = 600;
 static MAX_LVL: usize = 8;
 static MAX_DIFF: u8 = 8;
+static MAX_HP: u8 = 8;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = true;
 static INVINCIBLE: bool = true;
@@ -654,19 +655,19 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 1000,
         rain_acidity: 0,
         gold_amt: 8,
-        text: b"\x84\x87\x85",
+        text: b"\x84\x87\x85a",
     },
     // This is the first real level
     LVlSettings {
         drone_limit: 0,
         fly_limit: 2,
-        slider_limit: 4,
-        seeker_limit: 3,
-        bomber_limit: 4,
+        slider_limit: 0,
+        seeker_limit: 0,
+        bomber_limit: 2,
         drone_rte: 100,
         rain_chance_rte: 400,
         rain_amount_rte: 600,
-        rain_acidity: 80,
+        rain_acidity: 0,
         gold_amt: 8,
         text: b"\x84\x87\x85
 MOVE
@@ -678,11 +679,11 @@ DRILL",
         fly_limit: 3,
         slider_limit: 0,
         seeker_limit: 0,
-        bomber_limit: 0,
+        bomber_limit: 3,
         drone_rte: 250,
         rain_chance_rte: 300,
         rain_amount_rte: 300,
-        rain_acidity: 0,
+        rain_acidity: 5,
         gold_amt: 24,
         text: b"THE END?",
     },
@@ -691,11 +692,11 @@ DRILL",
         fly_limit: 4,
         slider_limit: 3,
         seeker_limit: 0,
-        bomber_limit: 0,
+        bomber_limit: 3,
         drone_rte: 200,
         rain_chance_rte: 200,
         rain_amount_rte: 300,
-        rain_acidity: 0,
+        rain_acidity: 10,
         gold_amt: 32,
         text: b"THE END?",
     },
@@ -704,24 +705,24 @@ DRILL",
         fly_limit: 5,
         slider_limit: 4,
         seeker_limit: 0,
-        bomber_limit: 0,
+        bomber_limit: 2,
         drone_rte: 150,
         rain_chance_rte: 100,
         rain_amount_rte: 140,
-        rain_acidity: 0,
+        rain_acidity: 20,
         gold_amt: 48,
         text: b"THE END?",
     },
     LVlSettings {
-        drone_limit: 5,
+        drone_limit: 2,
         fly_limit: 6,
         slider_limit: 5,
-        seeker_limit: 0,
-        bomber_limit: 0,
+        seeker_limit: 3,
+        bomber_limit: 2,
         drone_rte: 120,
         rain_chance_rte: 60,
         rain_amount_rte: 120,
-        rain_acidity: 0,
+        rain_acidity: 30,
         gold_amt: 64,
         text: b"THE END?",
     },
@@ -729,12 +730,12 @@ DRILL",
         drone_limit: 6,
         fly_limit: 7,
         slider_limit: 6,
-        seeker_limit: 0,
-        bomber_limit: 0,
+        seeker_limit: 3,
+        bomber_limit: 4,
         drone_rte: 100,
         rain_chance_rte: 50,
         rain_amount_rte: 100,
-        rain_acidity: 0,
+        rain_acidity: 40,
         gold_amt: 64,
         text: b"THE END?",
     },
@@ -742,12 +743,12 @@ DRILL",
         drone_limit: 7,
         fly_limit: 8,
         slider_limit: 7,
-        seeker_limit: 0,
-        bomber_limit: 0,
+        seeker_limit: 4,
+        bomber_limit: 4,
         drone_rte: 80,
         rain_chance_rte: 40,
         rain_amount_rte: 80,
-        rain_acidity: 0,
+        rain_acidity: 60,
         gold_amt: 64,
         text: b"THE END?",
     },
@@ -805,6 +806,7 @@ struct GameMaster {
     auto_drill: bool,
     gameover_acc: u8,
     pal_index: usize,
+    last_dmg_from: String,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -854,6 +856,7 @@ impl GameMaster {
             auto_drill: true,
             gameover_acc: 0,
             pal_index: 0,
+            last_dmg_from: String::new(),
         }
     }
 
@@ -1197,7 +1200,7 @@ impl GameMaster {
             #[allow(static_mut_refs)]
             // TODO: THIS IS BAD
             self.gold_locs.retain(|gold| {
-                let collided = GM.collides_player(gold, &Pos { x: 8, y: 8 });
+                let collided = GM.collides_player(gold, &Pos { x: 4, y: 4 });
                 if collided {
                     GM.sfx_gold();
                     GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
@@ -1220,9 +1223,15 @@ impl GameMaster {
                 self.powerup_taken = true;
                 self.sfx_ok();
                 // Random powerup
-                let pu_index = 2;
+                let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
                 self.powerup_cur = POWERUP_TYPES[pu_index].clone();
                 self.powerup_frames = POWERUP_FRAMES; // 10 seconds at 60fps
+                if self.powerup_cur == PowerUp::Invincible {
+                    self.hp += 1;
+                    if self.hp > MAX_HP {
+                        self.hp = MAX_HP;
+                    }
+                }
             }
         }
     }
@@ -1238,7 +1247,6 @@ impl GameMaster {
         }
     }
 
-    // from is for dbg
     fn player_dmg(&mut self, from: &str) {
         if self.powerup_cur == PowerUp::Invincible {
             return;
@@ -1247,6 +1255,7 @@ impl GameMaster {
         self.hp = self.hp.saturating_sub(1);
         self.sfx_dmg();
         trace(format!("DMG FROM: {}: HP={}", from, self.hp));
+        self.last_dmg_from = from.to_string();
     }
 
     fn draw_gold(&mut self, x: i32, y: i32, amt: u16) {
@@ -1300,7 +1309,7 @@ impl GameMaster {
     }
 
     fn sfx_deny(&mut self) {
-        tone(400, 2, 128, TONE_TRIANGLE);
+        tone(400, 2, 128, TONE_PULSE1);
     }
 
     fn sfx_screen_change(&mut self) {
@@ -1919,14 +1928,14 @@ impl GameMaster {
             let beat = (self.frame / 4) % 32;
             if self.frame % 512 < 256 {
                 match beat {
-                    0 => p1(60, 80),
-                    4 => p1(64, 80),
-                    8 => p1(67, 80),
-                    12 => p1(69, 80),
-                    16 => p1(67, 80),
-                    20 => p1(64, 80),
-                    24 => p1(62, 80),
-                    _ => p1(0, 0),
+                    0 => p2(60, 80),
+                    4 => p2(64, 80),
+                    8 => p2(67, 80),
+                    12 => p2(69, 80),
+                    16 => p2(67, 80),
+                    20 => p2(64, 80),
+                    24 => p2(62, 80),
+                    _ => p2(0, 0),
                 }
                 match beat {
                     0 => p3(50, 60),
@@ -1937,14 +1946,14 @@ impl GameMaster {
                 }
             } else {
                 match beat {
-                    0 => p1(67, 80),
-                    4 => p1(69, 80),
-                    8 => p1(71, 80),
-                    12 => p1(72, 80),
-                    16 => p1(71, 80),
-                    20 => p1(69, 80),
-                    24 => p1(67, 80),
-                    _ => p1(0, 0),
+                    0 => p2(67, 80),
+                    4 => p2(69, 80),
+                    8 => p2(71, 80),
+                    12 => p2(72, 80),
+                    16 => p2(71, 80),
+                    20 => p2(69, 80),
+                    24 => p2(67, 80),
+                    _ => p2(0, 0),
                 }
                 match beat {
                     0 => p3(55, 60),
@@ -2309,9 +2318,6 @@ impl GameMaster {
             self.powerup_cur = PowerUp::None;
         }
 
-        // Damage frames countdown
-        self.dmg_frames = self.dmg_frames.saturating_sub(1);
-
         // Check for game over
         if self.hp == 0 && !INVINCIBLE {
             self.gameover_acc += 1;
@@ -2335,9 +2341,6 @@ impl GameMaster {
         if self.screen != Screen::Shop {
             return;
         }
-        fn cont(gm: &mut GameMaster) {
-            gm.screen_set(Screen::Transition);
-        }
         if self.purchased > 0 && self.input_check_any() {
             self.purchased = 0;
             self.no_input_frames = NO_INPUT_FRAMES;
@@ -2345,7 +2348,7 @@ impl GameMaster {
         if self.input_check(BUTTON_UP) {
             // Buy heart piece
             self.no_input_frames = NO_INPUT_FRAMES;
-            if self.gold >= self.cost_heart && self.hp < 8 {
+            if self.gold >= self.cost_heart && self.hp < MAX_HP {
                 self.gold = self.gold.saturating_sub(self.cost_heart);
                 self.hp += 1;
                 self.purchased = 1;
@@ -2379,7 +2382,7 @@ impl GameMaster {
                 self.dmg_frames = DMG_FRAMES;
             }
         } else if self.input_check(BUTTON_DOWN) {
-            cont(self);
+            self.screen_set(Screen::Transition);
         }
         self.up_rain_pos(100, 80, RAIN_MAX / 2, 2);
     }
@@ -2647,11 +2650,29 @@ impl GameMaster {
         rect(0, 0, 160, 160);
         self.colors_set(4);
         let title = format!("DAY {}", self.lvl);
-        text(title, 50, 60);
+        text(title, 66, 60);
         self.colors_set(2);
-        vline(30, 0, 160);
+        text(self.cur_lvl_data.text, 66, 80);
+        // TODO: This is a bit CPU intensive
+        // Sine
         self.colors_set(2);
-        text(self.cur_lvl_data.text, 50, 90);
+        for i in 0..160 {
+            let sina = (self.frame as f32 / 320.).sin() * 2.0;
+            let sin = ((self.frame as f32 / 16.) + (i as f32 / (4. + sina))).sin();
+            let y = (sin * 4.0 + 125.0) as i32;
+            rect(0, i as i32, (160 - y) as u32, 1);
+        }
+        // Sine
+        for i in 0..160 {
+            let sina = (self.frame as f32 / 320.).sin() * 2.0;
+            let sin = ((self.frame as f32 / 16.) + (i as f32 / (4. + sina))).sin();
+            let z = (sin * 2.0 + 155.0) as i32;
+            self.colors_set((i + (self.frame as u16 / 32)) % 2 + 1);
+            rect(i as i32, 0, 1, (160 - z) as u32);
+            rect(160 - i as i32, z, 1, (160 - z) as u32);
+            rect(0, i as i32, (160 - z) as u32, 1);
+            rect(z, 160 - i as i32, 10, 1);
+        }
     }
 
     fn render_sc_gameover(&mut self) {
@@ -2673,20 +2694,9 @@ impl GameMaster {
     }
 
     fn render_sc_main(&mut self) {
-        // Always run palette change first
-        // If took damage, change palette briefly
-        if self.dmg_frames > 0 {
-            self.palette_set(PAL_DMG);
-        } else if self.gameover_acc > 0 {
-            self.palette_set(PAL_DMG);
-        } else {
-            self.palette_set(PALS[self.pal_index as usize]);
-        }
-
         if self.screen != Screen::Game {
             return;
         }
-
         // Render the world
         self.colors_set(3);
         for y in 0..WORLD_SIZE {
@@ -2855,10 +2865,14 @@ impl GameMaster {
         let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
         self.colors_set(3);
         for i in 0..self.gold_locs.len() {
-            // rect(gold.x as i32, gold.y as i32, 2, 2);
             self.colors_set(3);
-            if (self.frame / 16) % self.gold_locs.len() as u32 == i as u32 {
-                self.colors_set(4);
+            // if (self.frame / 16) % self.gold_locs.len() as u32 == i as u32 {
+            //     self.colors_set(4);
+            // }
+            if self.player_pos.distance(&self.gold_locs[i]) < 48. {
+                if (self.frame / 16) % 2 == 0 {
+                    self.colors_set(4);
+                }
             }
             let gold = &self.gold_locs[i];
             blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
@@ -2988,6 +3002,22 @@ impl GameMaster {
             let help_text = b"\x84\x85\x87+\x80";
             text(help_text, 60, 53);
         }
+
+        // Damage text
+        if self.dmg_frames > 0 {
+            self.colors_set(1);
+            text(
+                &format!(" {:^8} ", self.last_dmg_from),
+                self.player_pos.x as i32 - 34,
+                self.player_pos.y as i32 - 10,
+            );
+            self.colors_set(4);
+            text(
+                &format!(" {:^8} ", self.last_dmg_from),
+                self.player_pos.x as i32 - 33,
+                self.player_pos.y as i32 - 9,
+            );
+        }
     }
 
     fn start(&mut self) {
@@ -3007,6 +3037,18 @@ impl GameMaster {
         self.frame += 1;
         // No input frames countdown
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
+
+        // Damage frames countdown
+        // Must happen in main update since we use dmg_frames for palette change
+        self.dmg_frames = self.dmg_frames.saturating_sub(1);
+        // Always run palette change first
+        if self.dmg_frames > 0 {
+            self.palette_set(PAL_DMG);
+        } else if self.gameover_acc > 0 {
+            self.palette_set(PAL_DMG);
+        } else {
+            self.palette_set(PALS[self.pal_index as usize]);
+        }
 
         // DRAW
         self.render_sc_intro();
