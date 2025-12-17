@@ -878,10 +878,10 @@ impl GameMaster {
 
     fn input_main(&mut self) {
         let pos_cache = self.player_pos;
-        let mut drill_down = false;
+        let mut drill_on = false;
         if self.input_check(BUTTON_1) || self.auto_drill {
             if !self.drill_overheat {
-                drill_down = true;
+                drill_on = true;
             }
         }
         self.dir = 0;
@@ -897,7 +897,7 @@ impl GameMaster {
             lr = 2;
         }
         self.is_drilling = false;
-        if drill_down && self.input_check(BUTTON_DOWN) {
+        if drill_on && self.input_check(BUTTON_DOWN) {
             self.is_drilling = true;
             self.has_drilled = true;
             self.dir = 3 + lr;
@@ -910,8 +910,21 @@ impl GameMaster {
                 self.drill_speed,
             );
         }
+        if drill_on && self.input_check(BUTTON_UP) {
+            self.is_drilling = true;
+            self.has_drilled = true;
+            self.dir = 6 + lr;
+            // Remove the 4 blocks above the smiley
+            self.world_drill_area(
+                (self.player_pos.x - 1) as usize,
+                (self.player_pos.y - 4) as usize,
+                (PLAYER_SIZE + 2) as usize,
+                4,
+                self.drill_speed,
+            );
+        }
 
-        if drill_down && self.input_check(BUTTON_RIGHT) {
+        if drill_on && self.input_check(BUTTON_RIGHT) {
             self.is_drilling = true;
             self.has_drilled = true;
             // Remove the 4 blocks to the right of the smiley
@@ -923,7 +936,7 @@ impl GameMaster {
                 self.drill_speed,
             );
         }
-        if drill_down && self.input_check(BUTTON_LEFT) {
+        if drill_on && self.input_check(BUTTON_LEFT) {
             self.is_drilling = true;
             self.has_drilled = true;
             // Remove the 4 blocks to the left of the smiley
@@ -2845,6 +2858,9 @@ impl GameMaster {
             3 => Pos::new(0, PLAYER_SIZE as i16),
             4 => Pos::new(-8, PLAYER_SIZE as i16),
             5 => Pos::new(PLAYER_SIZE as i16, PLAYER_SIZE as i16),
+            6 => Pos::new(0, -(PLAYER_SIZE as i16)),
+            7 => Pos::new(-(PLAYER_SIZE as i16), -(PLAYER_SIZE as i16)),
+            8 => Pos::new(PLAYER_SIZE as i16, -(PLAYER_SIZE as i16)),
             _ => Pos::new(PLAYER_SIZE as i16, 0),
         };
         let drill_flags = match self.dir {
@@ -2854,6 +2870,9 @@ impl GameMaster {
             3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
             4 => BLIT_1BPP | BLIT_FLIP_X,
             5 => BLIT_1BPP,
+            6 => BLIT_1BPP | BLIT_ROTATE,
+            7 => BLIT_1BPP | BLIT_ROTATE | BLIT_FLIP_Y,
+            8 => BLIT_1BPP | BLIT_ROTATE,
             _ => BLIT_1BPP,
         };
         let drill_show = match self.dir {
@@ -2867,6 +2886,9 @@ impl GameMaster {
             let drill_sprite = match self.dir {
                 0..4 => drill_sprite_n,
                 4..6 => drill_sprite_d,
+                6 => drill_sprite_n,
+                7 => drill_sprite_d,
+                8 => drill_sprite_d,
                 _ => drill_sprite_n,
             };
             blit(
