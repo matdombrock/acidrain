@@ -32,6 +32,63 @@ use fastrand::Rng;
 
 use wasm4::*;
 
+static GRID: bool = false;
+static WORLD_SIZE: usize = 160;
+static PLAYER_SIZE: u8 = 8;
+static RAIN_MAX: usize = 500;
+static DMG_FRAMES: u8 = 16;
+static NO_INPUT_FRAMES: u8 = 120;
+static POWERUP_FRAMES: u16 = 600;
+static MAX_LVL: usize = 8;
+static MAX_DIFF: u8 = 8;
+static DIRT_START: u8 = 24;
+static MUSIC_ENABLED: bool = true;
+static INVINCIBLE: bool = true;
+
+// Color palettes
+static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
+static PAL_CLREV: [u32; 4] = [0xd0d058, 0xa0a840, 0x708028, 0x405010]; // Classic Rev
+static PAL_CL: [u32; 4] = [0x405010, 0x708028, 0xa0a840, 0xd0d058]; // Classic
+static PAL_MOON: [u32; 4] = [0x191b1a, 0x294257, 0xa0a840, 0xd0d058]; // Moonlight
+static PAL_MOLD: [u32; 4] = [0x191b1a, 0x294257, 0x579c9a, 0x99c9b3]; // BlueMold
+static PAL_NYMPH: [u32; 4] = [0x2c2137, 0x446176, 0x3fac95, 0xa1ef8c]; // Nymph
+static PAL_SWAMP: [u32; 4] = [0x3b252e, 0x593a5f, 0x4d7d65, 0xd1ada1]; // Forgotten Swamp
+static PAL_STAR: [u32; 4] = [0x674577, 0x64b9ca, 0xffa3d6, 0xffebe5]; // Star pop
+static PAL_GBN: [u32; 4] = [0x060601, 0x0b3e08, 0x489a0d, 0xdaf222]; // GB Night
+static PAL_ML: [u32; 4] = [0x211f1f, 0x372c38, 0x7a7272, 0xababab]; // Mono logo
+static PAL_TECH: [u32; 4] = [0x1d2938, 0x2a616e, 0x13b37e, 0x07ef5c]; // Technobike
+static PAL_DMG: [u32; 4] = [0x221111, 0x551111, 0xDD1111, 0xFF1111];
+static PALS: [[u32; 4]; 11] = [
+    PAL_GBN, PAL_NYMPH, PAL_MOON, PAL_STAR, PAL_MOLD, PAL_SWAMP, PAL_ML, PAL_TECH, PAL_OG, PAL_CL,
+    PAL_CLREV,
+];
+
+static INTRO_TEXT: &str = r#"
+Its getting harder
+out here every day.
+
+Every dig, the rain
+comes stronger, 
+faster, 
+and with more bite.
+
+I don't know how 
+much longer they 
+expect us to keep
+this up.
+
+I was just be happy
+to retire with some
+skin left...
+
+I wanna know kid,
+have you ever seen
+the rain?
+
+- ACIDMINER #1336
+"#;
+
+// Sprite data
 #[rustfmt::skip]
 const SMILEY1: [u8; 8] = [
     0b11000011,
@@ -446,35 +503,6 @@ const LOGO_N: [u8; 32] = [
     0b10101001, 0b11010010,
 ];
 
-static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
-static PAL_CLREV: [u32; 4] = [0xd0d058, 0xa0a840, 0x708028, 0x405010]; // Classic Rev
-static PAL_CL: [u32; 4] = [0x405010, 0x708028, 0xa0a840, 0xd0d058]; // Classic
-static PAL_MOON: [u32; 4] = [0x191b1a, 0x294257, 0xa0a840, 0xd0d058]; // Moonlight
-static PAL_MOLD: [u32; 4] = [0x191b1a, 0x294257, 0x579c9a, 0x99c9b3]; // BlueMold
-static PAL_NYMPH: [u32; 4] = [0x2c2137, 0x446176, 0x3fac95, 0xa1ef8c]; // Nymph
-static PAL_SWAMP: [u32; 4] = [0x3b252e, 0x593a5f, 0x4d7d65, 0xd1ada1]; // Forgotten Swamp
-static PAL_STAR: [u32; 4] = [0x674577, 0x64b9ca, 0xffa3d6, 0xffebe5]; // Star pop
-static PAL_GBN: [u32; 4] = [0x060601, 0x0b3e08, 0x489a0d, 0xdaf222]; // GB Night
-static PAL_ML: [u32; 4] = [0x211f1f, 0x372c38, 0x7a7272, 0xababab]; // Mono logo
-static PAL_TECH: [u32; 4] = [0x1d2938, 0x2a616e, 0x13b37e, 0x07ef5c]; // Technobike
-static PAL_DMG: [u32; 4] = [0x221111, 0x551111, 0xDD1111, 0xFF1111];
-static PALS: [[u32; 4]; 11] = [
-    PAL_GBN, PAL_NYMPH, PAL_MOON, PAL_STAR, PAL_MOLD, PAL_SWAMP, PAL_ML, PAL_TECH, PAL_OG, PAL_CL,
-    PAL_CLREV,
-];
-
-static GRID: bool = false;
-static WORLD_SIZE: usize = 160;
-static PLAYER_SIZE: u8 = 8;
-static RAIN_MAX: usize = 500;
-static DMG_FRAMES: u8 = 16;
-static NO_INPUT_FRAMES: u8 = 120;
-static POWERUP_FRAMES: u16 = 600;
-static MAX_LVL: usize = 8;
-static DIRT_START: u8 = 24;
-static MUSIC_ENABLED: bool = false;
-static INVINCIBLE: bool = true;
-
 pub struct MiniBitVec {
     data: Vec<u8>,
     len: usize,
@@ -564,6 +592,7 @@ impl Pos {
 
 #[derive(PartialEq)]
 enum Screen {
+    Intro,
     Start,
     Game,
     GameOver,
@@ -817,7 +846,7 @@ impl GameMaster {
             no_input_frames: 0,
             has_drilled: false,
             is_drilling: false,
-            screen: Screen::Start,
+            screen: Screen::Intro,
             cost_heart: 8,
             cost_drill_speed: 16,
             cost_drill_cool: 16,
@@ -917,6 +946,8 @@ impl GameMaster {
         let gold = self.gold;
         let rng = self.rng.clone();
         let lvl = self.lvl;
+        let difficulty = self.difficulty;
+        let auto_drill = self.auto_drill;
         let hp = self.hp;
         let drill_speed = self.drill_speed;
         let drill_heat_max = self.drill_heat_max;
@@ -927,6 +958,8 @@ impl GameMaster {
         self.gold = gold;
         self.rng = rng;
         self.lvl = lvl;
+        self.difficulty = difficulty;
+        self.auto_drill = auto_drill;
         self.hp = hp;
         self.drill_speed = drill_speed;
         self.drill_heat_max = drill_heat_max;
@@ -1185,7 +1218,7 @@ impl GameMaster {
             let pu_collide = self.collides_player(&self.powerup_loc, &Pos { x: 8, y: 8 });
             if pu_collide {
                 self.powerup_taken = true;
-                self.sfx_buy();
+                self.sfx_ok();
                 // Random powerup
                 let pu_index = 2;
                 self.powerup_cur = POWERUP_TYPES[pu_index].clone();
@@ -1262,7 +1295,7 @@ impl GameMaster {
         tone(200 | (500 << 16), 60, 128, TONE_NOISE);
     }
 
-    fn sfx_buy(&mut self) {
+    fn sfx_ok(&mut self) {
         tone(400 | (600 << 16), 4, 128, TONE_PULSE1);
     }
 
@@ -1806,10 +1839,7 @@ impl GameMaster {
         if !MUSIC_ENABLED {
             return;
         }
-        if self.screen != Screen::Shop
-            && self.screen != Screen::Start
-            && self.screen != Screen::GameOver
-        {
+        if self.screen == Screen::Game {
             return;
         }
         fn p1(note: u32, vol: u32) {
@@ -1824,54 +1854,395 @@ impl GameMaster {
         fn p4(note: u32, vol: u32) {
             tone(note, 1, vol, TONE_NOISE | TONE_NOTE_MODE);
         }
-        let beat = (self.frame / 2) % 64;
-        match beat {
-            0 => p1(70 - 24, 100),
-            1 => p1(70 - 24, 100),
-            16 => p1(70 - 24, 100),
-            17 => p1(70 - 24, 100),
-            _ => p1(0, 0),
+        if self.screen == Screen::Intro {
+            // Simple intro jingle
+            let beat = (self.frame / 4) % 32;
+            let beat_long = (self.frame / 4) % 64;
+            if self.frame % 512 < 256 {
+                match beat {
+                    0 => p1(60, 100),
+                    2 => p1(67, 100),
+                    4 => p1(72, 100),
+                    8 => p1(74, 100),
+                    12 => p1(72, 100),
+                    16 => p1(67, 100),
+                    20 => p1(65, 100),
+                    24 => p1(64, 100),
+                    _ => p1(0, 0),
+                }
+                match beat {
+                    0 => p3(50, 80),
+                    4 => p3(55, 80),
+                    8 => p3(57, 80),
+                    12 => p3(55, 80),
+                    16 => p3(50, 80),
+                    20 => p3(48, 80),
+                    24 => p3(47, 80),
+                    _ => p3(0, 0),
+                }
+                match beat_long {
+                    0..32 => p2(60, 40),
+                    32..64 => p2(65, 40),
+                    _ => p4(0, 0),
+                }
+            } else {
+                match beat {
+                    0 => p1(72, 100),
+                    2 => p1(74, 100),
+                    4 => p1(75, 100),
+                    8 => p1(77, 100),
+                    12 => p1(75, 100),
+                    16 => p1(74, 100),
+                    20 => p1(72, 100),
+                    24 => p1(70, 100),
+                    _ => p1(0, 0),
+                }
+                match beat {
+                    0 => p3(55, 80),
+                    4 => p3(57, 80),
+                    8 => p3(59, 80),
+                    12 => p3(57, 80),
+                    16 => p3(55, 80),
+                    20 => p3(53, 80),
+                    24 => p3(52, 80),
+                    _ => p3(0, 0),
+                }
+                match beat_long {
+                    0..32 => p2(67, 40),
+                    _ => p4(0, 0),
+                }
+            }
+            return;
         }
-        match beat {
-            0 => p3(70, 100),
-            1 => p3(75, 100),
-            4 => p3(77, 100),
-            _ => p3(0, 0),
+        // Shop music
+        if self.screen == Screen::Shop {
+            let beat = (self.frame / 4) % 32;
+            if self.frame % 512 < 256 {
+                match beat {
+                    0 => p1(60, 80),
+                    4 => p1(64, 80),
+                    8 => p1(67, 80),
+                    12 => p1(69, 80),
+                    16 => p1(67, 80),
+                    20 => p1(64, 80),
+                    24 => p1(62, 80),
+                    _ => p1(0, 0),
+                }
+                match beat {
+                    0 => p3(50, 60),
+                    8 => p3(55, 60),
+                    16 => p3(57, 60),
+                    24 => p3(55, 60),
+                    _ => p3(0, 0),
+                }
+            } else {
+                match beat {
+                    0 => p1(67, 80),
+                    4 => p1(69, 80),
+                    8 => p1(71, 80),
+                    12 => p1(72, 80),
+                    16 => p1(71, 80),
+                    20 => p1(69, 80),
+                    24 => p1(67, 80),
+                    _ => p1(0, 0),
+                }
+                match beat {
+                    0 => p3(55, 60),
+                    8 => p3(57, 60),
+                    16 => p3(59, 60),
+                    24 => p3(57, 60),
+                    _ => p3(0, 0),
+                }
+            }
+            return;
         }
-        let beat_noise = (self.frame / 8) % 4;
-        if beat_noise == 0 && (self.frame / 512) % 2 == 1 {
-            p4(120, 60);
-        } else if beat_noise == 2 && (self.frame / 1024) % 2 == 1 {
-            p4(120, 32);
+        // Transition music
+        if self.screen == Screen::Transition {
+            let beat = (self.frame / 4) % 16;
+            if self.frame % 256 < 128 {
+                match beat {
+                    0 => p1(72, 100),
+                    4 => p1(75, 100),
+                    8 => p1(79, 100),
+                    12 => p1(75, 100),
+                    _ => p1(0, 0),
+                }
+                match beat {
+                    0 => p3(55, 80),
+                    8 => p3(60, 80),
+                    _ => p3(0, 0),
+                }
+            } else {
+                match beat {
+                    0 => p1(79, 100),
+                    4 => p1(75, 100),
+                    8 => p1(72, 100),
+                    12 => p1(75, 100),
+                    _ => p1(0, 0),
+                }
+                match beat {
+                    0 => p3(60, 80),
+                    8 => p3(55, 80),
+                    _ => p3(0, 0),
+                }
+            }
+            return;
+        }
+        // Main game music
+        let beat = (self.frame / 4) % 32;
+        let beat_short = (self.frame / 4) % 16;
+        let beat_long = (self.frame / 4) % 64;
+        if self.frame % 1024 < 256 {
+            match beat_short {
+                0 => p3(70, 128),
+                2 => p3(75, 128),
+                4 => p3(70, 128),
+                6 => p3(73, 128),
+                8 => p3(75, 128),
+                10 => p3(70, 128),
+                12 => p3(75, 128),
+                14 => p3(70, 128),
+                16 => p3(73, 128),
+                18 => p3(72, 128),
+                _ => p3(0, 0),
+            }
+            match beat_long {
+                0..8 => p1(58, 80),
+                16..24 => p1(61, 80),
+                32..48 => p1(63, 80),
+                52..58 => p1(61, 80),
+                60..64 => p1(58, 80),
+                _ => p1(0, 0),
+            }
+            match beat_long {
+                0..8 => p2(58 - 24, 100),
+                16..24 => p2(61 - 24, 100),
+                32..48 => p2(63 - 24, 100),
+                52..58 => p2(61 - 24, 100),
+                60 => p2(58 - 12, 100),
+                _ => p2(0, 0),
+            }
+            if beat % 8 == 0 {
+                p4(100, 32);
+            } else {
+                p4(0, 0);
+            }
+        } else if self.frame % 1024 < 512 {
+            match beat_short {
+                0 => p3(70, 128),
+                2 => p3(75, 128),
+                4 => p3(70, 128),
+                6 => p3(73, 128),
+                8 => p3(75, 128),
+                10 => p3(70, 128),
+                12 => p3(75, 128),
+                14 => p3(70, 128),
+                16 => p3(73, 128),
+                18 => p3(72, 128),
+                _ => p3(0, 0),
+            }
+            match beat_short {
+                0 => p1(70 + 12, 90),
+                2 => p1(75 + 12, 90),
+                4 => p1(70 + 12, 90),
+                6 => p1(73 + 12, 90),
+                8 => p1(75 + 12, 90),
+                10 => p1(70 + 12, 90),
+                12 => p1(75 + 12, 90),
+                14 => p1(70 + 12, 90),
+                16 => p1(73 + 12, 90),
+                18 => p1(72 + 12, 90),
+                _ => p1(0, 0),
+            }
+            match beat_long {
+                0..8 => p1(58, 80),
+                16..24 => p1(61, 80),
+                32..48 => p1(63, 80),
+                52..58 => p1(61, 80),
+                60..64 => p1(58, 80),
+                _ => p1(0, 0),
+            }
+            match beat_long {
+                0..8 => p2(58 - 12, 100),
+                16..24 => p2(61 - 12, 100),
+                32..48 => p2(66 - 12, 100),
+                52..58 => p2(65 - 12, 100),
+                60 => p2(58 - 12, 100),
+                _ => p2(0, 0),
+            }
+            if beat % 4 == 0 {
+                p4(100, 32);
+            } else {
+                p4(0, 0);
+            }
+        } else if self.frame % 1024 < 768 {
+            match beat_short {
+                0 => p1(70, 80),
+                2 => p1(75, 80),
+                4 => p1(70, 80),
+                6 => p1(73, 80),
+                8 => p1(75, 80),
+                10 => p1(70, 80),
+                12 => p1(75, 80),
+                14 => p1(70, 80),
+                16 => p1(73, 80),
+                18 => p1(72, 80),
+                _ => p1(0, 0),
+            }
+            match beat_long {
+                0..8 => p2(58 - 24, 100),
+                10..12 => p2(58 - 12, 100),
+                16..24 => p2(61 - 24, 100),
+                26..28 => p2(61 - 12, 100),
+                32..48 => p2(63 - 24, 100),
+                52..58 => p2(68 - 24, 100),
+                60..62 => p2(70 - 24, 100),
+                _ => p2(0, 0),
+            }
+            match beat {
+                0 => p3(70, 80),
+                2 => p3(70, 80),
+                4 => p3(75, 80),
+                6 => p3(75, 80),
+                8 => p3(77, 80),
+                10 => p3(77, 80),
+                12 => p3(75, 80),
+                14 => p3(75, 80),
+                16 => p3(70, 80),
+                20 => p3(68, 80),
+                24 => p3(67, 80),
+                28 => p3(63, 80),
+                _ => p3(0, 0),
+            }
+            if beat % 4 == 0 {
+                p4(100, 32);
+            } else if beat % 2 == 0 && beat_long > 32 {
+                p4(120, 48);
+            } else {
+                p4(0, 0);
+            }
         } else {
-            p4(0, 0);
+            match beat_short {
+                0 => p1(70, 80),
+                2 => p1(75, 80),
+                4 => p1(70, 80),
+                6 => p1(73, 80),
+                8 => p1(75, 80),
+                10 => p1(70, 80),
+                12 => p1(75, 80),
+                14 => p1(70, 80),
+                16 => p1(73, 80),
+                18 => p1(72, 80),
+                _ => p1(0, 0),
+            }
+            match beat_long {
+                0..8 => p1(58, 80),
+                16..24 => p1(61, 80),
+                32..48 => p1(63, 80),
+                52..58 => p1(61, 80),
+                60..64 => p1(58, 80),
+                _ => p1(0, 0),
+            }
+            match beat_long {
+                0..8 => p2(58 - 24, 80),
+                10..12 => p2(58 - 12, 80),
+                16..24 => p2(61 - 24, 80),
+                26..28 => p2(61 - 12, 80),
+                32..34 => p2(63 - 24, 80),
+                36..38 => p2(63 - 12, 80),
+                52..58 => p2(68 - 24, 80),
+                60..62 => p2(70 - 24, 80),
+                _ => p2(0, 0),
+            }
+            match beat {
+                0 => p3(70, 80),
+                2 => p3(70, 80),
+                4 => p3(75, 80),
+                6 => p3(75, 80),
+                8 => p3(77, 80),
+                10 => p3(77, 80),
+                12 => p3(75, 80),
+                14 => p3(75, 80),
+                16 => p3(70, 80),
+                20 => p3(68, 80),
+                24 => p3(67, 80),
+                28 => p3(63, 80),
+                _ => p3(0, 0),
+            }
+            if beat % 4 == 0 {
+                p4(100, 32);
+            } else if beat % 2 == 0 && beat_long > 32 {
+                p4(120, 48);
+            } else {
+                p4(0, 0);
+            }
         }
-        let notes = [0, 70, 73, 75, 77];
-        let beat_rng = (self.frame / 8) % 32;
-        let note = notes[self.rng.i32(0..notes.len() as i32) as usize];
-        match beat_rng {
-            2 => p2(note, 80),
-            4 => p2(75 - 12, 80),
-            8 => p2(note, 80),
-            10 => p2(73 - 12, 80),
-            12 => p2(70 - 12, 80),
-            18 => p2(note, 80),
-            20 => p2(75 - 12, 80),
-            24 => p2(note, 80),
-            26 => p2(73 - 12, 80),
-            28 => p2(70 - 12, 80),
-            31 => p2(68 - 12, 80),
-            _ => p2(0, 0),
-        }
+
+        // let beat = (self.frame / 2) % 64;
+        // match beat {
+        //     0 => p1(70 - 24, 100),
+        //     1 => p1(70 - 24, 100),
+        //     16 => p1(70 - 24, 100),
+        //     17 => p1(70 - 24, 100),
+        //     _ => p1(0, 0),
+        // }
+        // match beat {
+        //     0 => p3(70, 100),
+        //     1 => p3(75, 100),
+        //     4 => p3(77, 100),
+        //     _ => p3(0, 0),
+        // }
+        // let beat_noise = (self.frame / 8) % 4;
+        // if beat_noise == 0 && (self.frame / 512) % 2 == 1 {
+        //     p4(120, 48);
+        // } else if beat_noise == 2 && (self.frame / 1024) % 2 == 1 {
+        //     p4(120, 32);
+        // } else {
+        //     p4(0, 0);
+        // }
+        // let notes = [0, 70, 73, 75, 77];
+        // let beat_rng = (self.frame / 8) % 32;
+        // let note = notes[self.rng.i32(0..notes.len() as i32) as usize];
+        // match beat_rng {
+        //     2 => p2(note, 80),
+        //     4 => p2(75 - 12, 80),
+        //     8 => p2(note, 80),
+        //     10 => p2(73 - 12, 80),
+        //     12 => p2(70 - 12, 80),
+        //     18 => p2(note, 80),
+        //     20 => p2(75 - 12, 80),
+        //     24 => p2(note, 80),
+        //     26 => p2(73 - 12, 80),
+        //     28 => p2(70 - 12, 80),
+        //     31 => p2(68 - 12, 80),
+        //     _ => p2(0, 0),
+        // }
     }
 
     fn screen_set(&mut self, screen: Screen) {
+        // Clear rain locs because they persist between screens
+        // and we might not do a world reset on them
+        self.rain_locs.clear();
         self.frame = 0;
         if screen != Screen::Game {
             self.no_input_frames = NO_INPUT_FRAMES;
         }
         self.sfx_screen_change();
         self.screen = screen;
+    }
+
+    fn up_sc_intro(&mut self) {
+        if self.screen != Screen::Intro {
+            return;
+        }
+        if self.input_check_any() {
+            self.screen_set(Screen::Start);
+        }
+        if self.frame > 1024 {
+            self.screen_set(Screen::Start);
+            return;
+        }
+        self.up_rain_pos(10, 20, RAIN_MAX / 2, 2);
     }
 
     fn up_sc_start(&mut self) {
@@ -1885,6 +2256,7 @@ impl GameMaster {
             if self.pal_index >= PALS.len() {
                 self.pal_index = 0;
             }
+            self.sfx_ok();
         }
         if self.input_check(BUTTON_1) {
             // Seed random with current frame
@@ -1893,6 +2265,21 @@ impl GameMaster {
             self.next_level();
             // Override next level screen set to transition
             self.screen_set(Screen::Transition);
+        }
+        if self.input_check(BUTTON_UP) {
+            self.no_input_frames = NO_INPUT_FRAMES / 2;
+            if self.difficulty < MAX_DIFF {
+                self.difficulty = self.difficulty + 1;
+                if self.difficulty >= MAX_DIFF {
+                    self.difficulty = 0;
+                }
+            }
+            self.sfx_ok();
+        }
+        if self.input_check(BUTTON_DOWN) {
+            self.no_input_frames = NO_INPUT_FRAMES / 2;
+            self.auto_drill = !self.auto_drill;
+            self.sfx_ok();
         }
         self.up_rain_pos(50, 60, RAIN_MAX / 2, 5);
     }
@@ -1962,7 +2349,7 @@ impl GameMaster {
                 self.gold = self.gold.saturating_sub(self.cost_heart);
                 self.hp += 1;
                 self.purchased = 1;
-                self.sfx_buy();
+                self.sfx_ok();
             } else {
                 self.sfx_deny();
                 self.dmg_frames = DMG_FRAMES;
@@ -1974,7 +2361,7 @@ impl GameMaster {
                 self.gold = self.gold.saturating_sub(self.cost_drill_speed);
                 self.drill_speed += 8;
                 self.purchased = 2;
-                self.sfx_buy();
+                self.sfx_ok();
             } else {
                 self.sfx_deny();
                 self.dmg_frames = DMG_FRAMES;
@@ -1986,7 +2373,7 @@ impl GameMaster {
                 self.gold = self.gold.saturating_sub(self.cost_drill_cool);
                 self.drill_heat_max += 64;
                 self.purchased = 3;
-                self.sfx_buy();
+                self.sfx_ok();
             } else {
                 self.sfx_deny();
                 self.dmg_frames = DMG_FRAMES;
@@ -2024,6 +2411,19 @@ impl GameMaster {
         frames[frame_index as usize]
     }
 
+    fn render_logo_acid(&mut self, x: i32, y: i32) {
+        blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
+    }
+    fn render_logo_rain(&mut self, x: i32, y: i32) {
+        blit(&LOGO_R, x, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_A, x + 16 * 1, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
+        blit(&LOGO_N, x + 16 * 3, y, 16, 16, BLIT_1BPP);
+    }
+
     fn render_rain(&mut self) {
         for i in 0..self.rain_locs.len() {
             self.colors_set(2);
@@ -2046,7 +2446,45 @@ impl GameMaster {
         }
     }
 
-    fn render_start(&mut self) {
+    fn render_sc_intro(&mut self) {
+        if self.screen != Screen::Intro {
+            return;
+        }
+        self.colors_set(1);
+        rect(0, 0, 160, 160);
+        self.colors_set(3);
+        text(INTRO_TEXT, 4, 48 - (self.frame as i32 / 8));
+        self.colors_set(1);
+        // rect(0, 0, 160, 32);
+        // Sine
+        for i in 0..160 {
+            let sina = (self.frame as f32 / 320.).sin() * 2.0;
+            let sin = ((self.frame as f32 / 16.) + (i as f32 / (4. + sina))).sin();
+            let y = (sin * 8.0 + 130.0) as i32;
+            self.colors_set((i + (self.frame as u16 / 32)) % 2 + 1);
+            rect(i as i32, 0, 1, (160 - y) as u32);
+        }
+        self.render_rain();
+        self.colors_set(3);
+        self.render_logo_acid(14, 4);
+        self.render_logo_rain(84, 4);
+        self.colors_set(4);
+        self.render_logo_acid(14, 6);
+        self.render_logo_rain(84, 6);
+
+        self.colors_set(2);
+        rect(0, 144, 160, 16);
+        self.colors_set(1);
+        rect(2, 146, 156, 12);
+        self.colors_set(2);
+        if self.frame < 256 {
+            text("WASM4 RUST GPLv3", 18, 148);
+        } else {
+            text("PRESS ANY BUTTON", 18, 148);
+        }
+    }
+
+    fn render_sc_start(&mut self) {
         if self.screen != Screen::Start {
             return;
         }
@@ -2092,43 +2530,47 @@ impl GameMaster {
         self.colors_set(2);
         text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
         self.colors_set(3);
-        if (self.frame / 30) % 2 == 0 {
+        if (self.frame / 32) % 2 == 0 {
             self.colors_set(4);
         }
-        text(b"PRESS \x80 TO START", 16, 105);
-        self.colors_set(2);
+        let sx = ((self.frame as f32 / 8.).sin() * 2.0) as i32;
+        text(b"PRESS \x80 TO START", 16 + sx, 105);
+        self.colors_set(3);
         let x = 10;
         let y = 10;
-        blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
-        blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
-        blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
-        blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
+        self.render_logo_acid(x, y);
+        self.render_logo_rain(x, y + 18);
         let x = 12;
         let y = 12;
         self.colors_set(4);
-        blit(&LOGO_A, x, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_C, x + 16 * 1, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_I, x + 16 * 2, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_D, x + 16 * 3, y, 16, 16, BLIT_1BPP);
-        blit(&LOGO_R, x, y + 18, 16, 16, BLIT_1BPP);
-        blit(&LOGO_A, x + 16 * 1, y + 18, 16, 16, BLIT_1BPP);
-        blit(&LOGO_I, x + 16 * 2, y + 18, 16, 16, BLIT_1BPP);
-        blit(&LOGO_N, x + 16 * 3, y + 18, 16, 16, BLIT_1BPP);
-        //
+        self.render_logo_acid(x, y);
+        self.render_logo_rain(x, y + 18);
+
+        // Options
+        let diff_strs: [&str; MAX_DIFF as usize] = [
+            "BABY", "EASY", "MEDIUM", "HARD", "WILD", "OHNO!", "HECK", "HELL",
+        ];
+        let diff_str = diff_strs[self.difficulty as usize];
+        let drill_str = if self.auto_drill { "AUTO" } else { "MANUAL" };
+        let mode_str = "ARCADE";
         self.colors_set(3);
-        text(b"\x86BABY", 85, 20);
-        text(b"\x85EZDRILL", 85, 30);
-        text(b"\x87ARCADE", 85, 40);
+        text(b"\x86LVL", 95, 12);
+        self.colors_set(4);
+        text(diff_str, 104, 22);
+        self.colors_set(3);
+        text(b"\x87DRILL", 95, 32);
+        self.colors_set(4);
+        text(drill_str, 104, 42);
+        self.colors_set(3);
+        text(b"\x85MODE", 95, 52);
+        self.colors_set(4);
+        text(mode_str, 104, 62);
         //
         self.colors_set(1);
         text("GPLv3        v1.0", 13, 150);
     }
 
-    fn render_shop(&mut self) {
+    fn render_sc_shop(&mut self) {
         if self.screen == Screen::Shop {
             self.colors_set(1);
             rect(0, 0, 160, 160);
@@ -2142,10 +2584,15 @@ impl GameMaster {
                 rect(x as i32, y, 1, (160 - y) as u32);
             }
             self.render_rain();
-            self.colors_set(1);
+            self.colors_set(2);
             let sy = (self.frame as f32 / 8.).sin() * 2.0;
             text("UPGRADES!", 48, 6 + sy as i32);
-            self.draw_gold(50, 14 + sy as i32, self.gold);
+            self.colors_set(4);
+            text("UPGRADES!", 49, 7 + sy as i32);
+            self.colors_set(2);
+            self.draw_gold(49, 14 + sy as i32, self.gold);
+            self.colors_set(4);
+            self.draw_gold(50, 15 + sy as i32, self.gold);
             self.colors_set(3);
             vline(115, 45, 80);
             // Up
@@ -2192,7 +2639,7 @@ impl GameMaster {
         }
     }
 
-    fn render_transition(&mut self) {
+    fn render_sc_transition(&mut self) {
         if self.screen != Screen::Transition {
             return;
         }
@@ -2207,7 +2654,7 @@ impl GameMaster {
         text(self.cur_lvl_data.text, 50, 90);
     }
 
-    fn render_gameover(&mut self) {
+    fn render_sc_gameover(&mut self) {
         if self.screen != Screen::GameOver {
             return;
         }
@@ -2225,7 +2672,7 @@ impl GameMaster {
         self.draw_gold(50, 80, self.gold);
     }
 
-    fn render_main(&mut self) {
+    fn render_sc_main(&mut self) {
         // Always run palette change first
         // If took damage, change palette briefly
         if self.dmg_frames > 0 {
@@ -2550,6 +2997,7 @@ impl GameMaster {
 
     // TODO: Frame inc can happen everywhere?
     fn update(&mut self) {
+        self.up_sc_intro();
         self.up_sc_start();
         self.up_sc_main();
         self.up_sc_gameover();
@@ -2561,16 +3009,13 @@ impl GameMaster {
         self.no_input_frames = self.no_input_frames.saturating_sub(1);
 
         // DRAW
-        self.render_main();
+        self.render_sc_intro();
+        self.render_sc_main();
         // NOTE: Other screens only render if active
-        // Start screen
-        self.render_start();
-        // Game over screen
-        self.render_gameover();
-        // Shop screen
-        self.render_shop();
-        // Transition screen
-        self.render_transition();
+        self.render_sc_start();
+        self.render_sc_gameover();
+        self.render_sc_shop();
+        self.render_sc_transition();
         // No input overlay
         self.render_no_input();
         // Debug
