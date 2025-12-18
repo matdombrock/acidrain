@@ -3024,9 +3024,9 @@ impl GameMaster {
 
         // Render flies
         let fly_sprite = self.sprite_frame(6, vec![FLY1, FLY2]);
-        self.colors_set(4);
         for i in 0..self.fly_locs.len() {
             let fly = &self.fly_locs[i].clone();
+            self.colors_set(4);
             blit(&fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
             if fly.y < 16 {
                 self.color_flash(4, 2, 20);
