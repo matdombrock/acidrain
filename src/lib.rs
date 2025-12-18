@@ -389,6 +389,19 @@ const PU2: [u8; 8] = [
     0b01111110,
     0b00000000,
 ];
+
+#[rustfmt::skip]
+const EXC: [u8; 8] = [
+    0b11000011,
+    0b11000011,
+    0b11000011,
+    0b11100111,
+    0b11100111,
+    0b11111111,
+    0b11100111,
+    0b11100111,
+];
+
 #[rustfmt::skip]
 const LOGO_A: [u8; 32] = [
     0b11110000, 0b00001111,
@@ -671,7 +684,7 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         gold_amt: 8,
         text: b"\x84\x87\x85
 MOVE
-\x84\x87\x85+\x80
+\x84\x87\x86\x85+\x80
 DRILL",
     },
     LVlSettings {
@@ -685,7 +698,9 @@ DRILL",
         rain_amount_rte: 300,
         rain_acidity: 5,
         gold_amt: 24,
-        text: b"THE END?",
+        text: b"Its's all
+down from
+here...",
     },
     LVlSettings {
         drone_limit: 0,
@@ -852,7 +867,7 @@ impl GameMaster {
             cost_heart: 8,
             cost_drill_speed: 16,
             cost_drill_cool: 16,
-            purchased: 0, // None, shop, drill speed, drill cool
+            purchased: 0, // None, heart, drill speed, drill cool
             auto_drill: true,
             gameover_acc: 0,
             pal_index: 0,
@@ -917,9 +932,9 @@ impl GameMaster {
             // Remove the 4 blocks above the smiley
             self.world_drill_area(
                 (self.player_pos.x - 1) as usize,
-                (self.player_pos.y - 4) as usize,
+                (self.player_pos.y - 5) as usize,
                 (PLAYER_SIZE + 2) as usize,
-                4,
+                5,
                 self.drill_speed,
             );
         }
@@ -1075,8 +1090,8 @@ impl GameMaster {
     fn world_set_area(&mut self, x: usize, y: usize, w: usize, h: usize, value: bool) {
         for dy in 0..h {
             for dx in 0..w {
-                let wx = x + dx;
-                let wy = y + dy;
+                let wx = x.saturating_add(dx);
+                let wy = y.saturating_add(dy);
                 self.world_set(wx, wy, value);
             }
         }
@@ -1273,7 +1288,7 @@ impl GameMaster {
         self.last_dmg_from = from.to_string();
     }
 
-    fn draw_gold(&mut self, x: i32, y: i32, amt: u16) {
+    fn render_gold_text(&mut self, x: i32, y: i32, amt: u16) {
         let frame = (self.frame / 16) % 2;
         if frame == 0 {
             blit(&GOLDLRG1, x, y, 8, 8, BLIT_1BPP);
@@ -2017,23 +2032,28 @@ impl GameMaster {
         let beat_short = (self.frame / 4) % 16;
         let beat_long = (self.frame / 4) % 64;
         if self.frame % 1024 < 256 {
-            match beat_short {
-                0 => p3(70, 128),
-                2 => p3(75, 128),
-                4 => p3(70, 128),
-                6 => p3(73, 128),
-                8 => p3(75, 128),
-                10 => p3(70, 128),
-                12 => p3(75, 128),
-                14 => p3(70, 128),
-                16 => p3(73, 128),
-                18 => p3(72, 128),
-                _ => p3(0, 0),
+            // match beat_short {
+            //     0 => p3(70, 128),
+            //     2 => p3(75, 128),
+            //     4 => p3(70, 128),
+            //     6 => p3(73, 128),
+            //     8 => p3(75, 128),
+            //     10 => p3(70, 128),
+            //     12 => p3(75, 128),
+            //     14 => p3(70, 128),
+            //     16 => p3(73, 128),
+            //     18 => p3(72, 128),
+            //     _ => p3(0, 0),
+            // }
+            if beat % 4 == 0 {
+                p3(70, beat * 4);
+            } else {
+                p3(0, 0);
             }
             match beat_long {
                 0..8 => p1(58, 80),
                 16..24 => p1(61, 80),
-                32..48 => p1(63, 80),
+                32..48 => p1(65, 80),
                 52..58 => p1(61, 80),
                 60..64 => p1(58, 80),
                 _ => p1(0, 0),
@@ -2052,18 +2072,23 @@ impl GameMaster {
                 p4(0, 0);
             }
         } else if self.frame % 1024 < 512 {
-            match beat_short {
-                0 => p3(70, 128),
-                2 => p3(75, 128),
-                4 => p3(70, 128),
-                6 => p3(73, 128),
-                8 => p3(75, 128),
-                10 => p3(70, 128),
-                12 => p3(75, 128),
-                14 => p3(70, 128),
-                16 => p3(73, 128),
-                18 => p3(72, 128),
-                _ => p3(0, 0),
+            // match beat_short {
+            //     0 => p3(70, 128),
+            //     2 => p3(75, 128),
+            //     4 => p3(70, 128),
+            //     6 => p3(73, 128),
+            //     8 => p3(75, 128),
+            //     10 => p3(70, 128),
+            //     12 => p3(75, 128),
+            //     14 => p3(70, 128),
+            //     16 => p3(73, 128),
+            //     18 => p3(72, 128),
+            //     _ => p3(0, 0),
+            // }
+            if beat % 2 == 0 {
+                p3(70, beat * 4);
+            } else {
+                p3(0, 0);
             }
             match beat_short {
                 0 => p1(70 + 12, 90),
@@ -2081,7 +2106,7 @@ impl GameMaster {
             match beat_long {
                 0..8 => p1(58, 80),
                 16..24 => p1(61, 80),
-                32..48 => p1(63, 80),
+                32..48 => p1(68, 80),
                 52..58 => p1(61, 80),
                 60..64 => p1(58, 80),
                 _ => p1(0, 0),
@@ -2100,17 +2125,27 @@ impl GameMaster {
                 p4(0, 0);
             }
         } else if self.frame % 1024 < 768 {
+            let notes = [70, 75, 75, 75, 75, 75, 73, 77, 77 + 12];
+            let mut off = beat_long as usize / 8;
+            off = off.min(notes.len() - 2);
+            // if off >= notes.len() - 2 {
+            //     off = notes.len() - 2;
+            // }
             match beat_short {
                 0 => p1(70, 80),
                 2 => p1(75, 80),
                 4 => p1(70, 80),
                 6 => p1(73, 80),
                 8 => p1(75, 80),
-                10 => p1(70, 80),
-                12 => p1(75, 80),
-                14 => p1(70, 80),
-                16 => p1(73, 80),
-                18 => p1(72, 80),
+                10..16 => p1(
+                    notes[self.rng.u32(off as u32..notes.len() as u32) as usize],
+                    80,
+                ),
+                // 10 => p1(70, 80),
+                // 12 => p1(75, 80),
+                // 14 => p1(70, 80),
+                // 16 => p1(73, 80),
+                // 18 => p1(72, 80),
                 _ => p1(0, 0),
             }
             match beat_long {
@@ -2417,6 +2452,13 @@ impl GameMaster {
         unsafe { *DRAW_COLORS = c };
     }
 
+    fn color_flash(&mut self, ca: u16, cb: u16, duration: u32) {
+        self.colors_set(ca);
+        if self.frame % duration < duration / 2 {
+            self.colors_set(cb);
+        }
+    }
+
     fn palette_set(&mut self, pal: [u32; 4]) {
         unsafe {
             *PALETTE = pal;
@@ -2595,6 +2637,7 @@ impl GameMaster {
             self.colors_set(3);
             rect(0, 0, 160, 80);
             self.colors_set(1);
+            // Sine
             for x in 0..160 {
                 let sina = (self.frame as f32 / 320.).sin() * 2.0;
                 let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
@@ -2608,22 +2651,22 @@ impl GameMaster {
             self.colors_set(4);
             text("UPGRADES!", 49, 7 + sy as i32);
             self.colors_set(2);
-            self.draw_gold(49, 14 + sy as i32, self.gold);
+            self.render_gold_text(49, 14 + sy as i32, self.gold);
             self.colors_set(4);
-            self.draw_gold(50, 15 + sy as i32, self.gold);
+            self.render_gold_text(50, 15 + sy as i32, self.gold);
             self.colors_set(3);
             vline(115, 45, 80);
             // Up
             text(b"\x86HEART PIECE", 15, 50);
-            self.draw_gold(120, 50, self.cost_heart);
+            self.render_gold_text(120, 50, self.cost_heart);
             text(format!("{}/8", self.hp), 24, 60);
             // Left
             text(b"\x84DRILL SPEED", 15, 80);
-            self.draw_gold(120, 80, self.cost_drill_speed);
+            self.render_gold_text(120, 80, self.cost_drill_speed);
             text(format!("{}/128", self.drill_speed), 24, 90);
             // Righ
             text(b"\x85DRILL COOLR", 15, 110);
-            self.draw_gold(120, 110, self.cost_drill_cool);
+            self.render_gold_text(120, 110, self.cost_drill_cool);
             text(format!("{}/1024", self.drill_heat_max), 24, 120);
             // Down
             self.colors_set(4);
@@ -2635,24 +2678,35 @@ impl GameMaster {
                 self.colors_set(1);
                 rect(0, 45, 160, 120);
                 self.colors_set(4);
-                text("PURCHASED!", 12, 60);
+                text("PURCHASED!", 42, 60);
+                let mut pur_string = String::new();
+                let mut amt_string = String::new();
                 match self.purchased {
                     1 => {
-                        text("HEART PIECE", 12, 70);
-                        text(format!("{}/{}", self.hp, 8), 12, 80);
+                        pur_string = "HEART PIECE".to_string();
+                        amt_string = format!("{}/{}", self.hp, 8);
                     }
                     2 => {
-                        text("DRILL SPEED", 12, 70);
-                        text(format!("{}/{}", self.drill_speed, 128), 12, 80);
+                        pur_string = "DRILL SPEED".to_string();
+                        amt_string = format!("{}/{}", self.drill_speed, 128);
                     }
                     3 => {
-                        text("DRILL COOLR", 12, 70);
-                        text(format!("{}/{}", self.drill_heat_max, 1024), 12, 80);
+                        pur_string = "DRILL COOLR".to_string();
+                        amt_string = format!("{}/{}", self.drill_heat_max, 1024);
                     }
                     _ => {}
                 }
                 self.colors_set(3);
-                text(b"\x80TO CONTINUE", 12, 110);
+                text(pur_string, 38, 80);
+                self.colors_set(4);
+                text(amt_string, 38, 90);
+                self.colors_set(3);
+                for x in 0..160 {
+                    let sina = -(self.frame as f32 / 320.).sin() * 2.0;
+                    let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
+                    let y = (sin * 8.0 + 32.0) as i32;
+                    rect(x as i32, y + 100, 1, (160 - y) as u32);
+                }
             }
         }
     }
@@ -2722,7 +2776,7 @@ impl GameMaster {
         self.colors_set(4);
         text(over_text, 46, 61);
         self.colors_set(4);
-        self.draw_gold(50, 80, self.gold);
+        self.render_gold_text(50, 80, self.gold);
     }
 
     fn render_sc_main(&mut self) {
@@ -2770,7 +2824,7 @@ impl GameMaster {
         }
         // Gold collected
         // text(self.gold.to_string(), 4, 2);
-        self.draw_gold(4, 2, self.gold);
+        self.render_gold_text(4, 2, self.gold);
 
         // Heat bar
         self.colors_set(2);
@@ -2779,13 +2833,11 @@ impl GameMaster {
         rect(76, 12, heat_bar_width, 4);
         self.colors_set(3);
         if self.drill_overheat {
-            let f = (self.frame / 10) % 2;
-            let c = (f + 2) as u16;
-            self.colors_set(c);
+            self.color_flash(2, 3, 16);
         }
         rect(76, 12, heat_width, 4);
 
-        // Powerups
+        // Powerups UI
         if self.powerup_frames > 1 {
             if self.powerup_frames % 20 < 10 {
                 self.colors_set(2);
@@ -2828,21 +2880,22 @@ impl GameMaster {
             _ => self.player_flags_last,
         };
         self.player_flags_last = player_flags;
-        let player_frame = (self.frame / 10) % 3;
-        let mut player_sprite = match player_frame {
-            0 => &SMILEY1,
-            1 => &SMILEY2,
-            2 => &SMILEY3,
-            _ => &SMILEY1,
-        };
+        // let player_frame = (self.frame / 10) % 3;
+        // let mut player_sprite = match player_frame {
+        //     0 => &SMILEY1,
+        //     1 => &SMILEY2,
+        //     2 => &SMILEY3,
+        //     _ => &SMILEY1,
+        // };
+        let mut player_sprite = self.sprite_frame(12, vec![SMILEY1, SMILEY2, SMILEY3]);
         if self.dir == 0 {
-            player_sprite = &SMILEY1;
+            player_sprite = SMILEY1;
         }
         if self.hp == 0 {
-            player_sprite = &SMILEYDEAD;
+            player_sprite = SMILEYDEAD;
         }
         blit(
-            player_sprite,
+            &player_sprite,
             self.player_pos.x as i32,
             self.player_pos.y as i32,
             8,
@@ -2902,8 +2955,7 @@ impl GameMaster {
         }
 
         // Render gold locations
-        let gold_frame = (self.frame / 15) % 2;
-        let gold_sprite = if gold_frame == 0 { &GOLD1 } else { &GOLD2 };
+        let gold_sprite = self.sprite_frame(6, vec![GOLD1, GOLD2]);
         self.colors_set(3);
         for i in 0..self.gold_locs.len() {
             self.colors_set(3);
@@ -2911,22 +2963,19 @@ impl GameMaster {
             //     self.colors_set(4);
             // }
             if self.player_pos.distance(&self.gold_locs[i]) < 48. {
-                if (self.frame / 16) % 2 == 0 {
-                    self.colors_set(4);
-                }
+                self.color_flash(3, 4, 20);
             }
             let gold = &self.gold_locs[i];
-            blit(gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
+            blit(&gold_sprite, gold.x as i32, gold.y as i32, 8, 4, BLIT_1BPP);
         }
 
         // Render exit
-        let door_frame = (self.frame / 20) % 2;
-        let door_sprite = if door_frame == 0 { &DOOR1 } else { &DOOR2 };
+        let door_sprite = self.sprite_frame(6, vec![DOOR1, DOOR2]);
         self.colors_set(1);
         rect(self.door_loc.x as i32, self.door_loc.y as i32, 8, 8);
         self.colors_set(4);
         blit(
-            door_sprite,
+            &door_sprite,
             self.door_loc.x as i32,
             self.door_loc.y as i32,
             8,
@@ -2936,8 +2985,8 @@ impl GameMaster {
 
         // Render powerups
         if !self.powerup_taken {
-            let powerup_frame = (self.frame / 20) % 2;
-            let powerup_sprite = if powerup_frame == 0 { &PU1 } else { &PU2 };
+            let powerup_sprite =
+                self.sprite_frame(6, vec![PU1, PU1, PU1, PU1, PU1, PU1, PU1, PU1, PU1, PU2]);
             let mut powerup_x = self.powerup_loc.x as i32;
             match (self.frame / 20) % 8 {
                 6 => powerup_x += 1,
@@ -2946,7 +2995,7 @@ impl GameMaster {
             }
             self.colors_set(4);
             blit(
-                powerup_sprite,
+                &powerup_sprite,
                 powerup_x,
                 self.powerup_loc.y as i32,
                 8,
@@ -2976,9 +3025,13 @@ impl GameMaster {
         // Render flies
         let fly_sprite = self.sprite_frame(6, vec![FLY1, FLY2]);
         self.colors_set(4);
-        for fly in &self.fly_locs {
-            // rect(fly.x as i32, fly.y as i32, 4, 4);
+        for i in 0..self.fly_locs.len() {
+            let fly = &self.fly_locs[i].clone();
             blit(&fly_sprite, fly.x as i32, fly.y as i32, 8, 8, BLIT_1BPP);
+            if fly.y < 16 {
+                self.color_flash(4, 2, 20);
+                blit(&EXC, fly.x as i32, 150, 8, 8, BLIT_1BPP);
+            }
         }
 
         // Render sliders
