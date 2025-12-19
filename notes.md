@@ -29,4 +29,8 @@ I wanna know kid, have you ever seen the rain?
 
 - ACIDMINER
 
+distance check is not right, need to check from center
 
+overheat message?
+
+sandbox mode - just dig

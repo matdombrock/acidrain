@@ -38,13 +38,15 @@ static PLAYER_SIZE: u8 = 8;
 static RAIN_MAX: usize = 500;
 static DMG_FRAMES: u8 = 16;
 static NO_INPUT_FRAMES: u8 = 120;
+static NO_INPUT_FRAMES_SH: u8 = 48;
 static POWERUP_FRAMES: u16 = 600;
 static MAX_LVL: usize = 8;
 static MAX_DIFF: u8 = 8;
 static MAX_HP: u8 = 8;
+static DOOR_TIMER: u16 = 128;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = true;
-static INVINCIBLE: bool = true;
+static INVINCIBLE: bool = false;
 
 // Color palettes
 static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
@@ -822,6 +824,7 @@ struct GameMaster {
     gameover_acc: u8,
     pal_index: usize,
     last_dmg_from: String,
+    door_timer: u16,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -845,7 +848,7 @@ impl GameMaster {
             powerup_frames: 0,
             gold_locs: Vec::new(),
             gold: 0,
-            drill_speed: 64,
+            drill_speed: 48,
             drill_heat_max: 256,
             drill_heat: 0,
             drill_overheat: false,
@@ -872,6 +875,7 @@ impl GameMaster {
             gameover_acc: 0,
             pal_index: 0,
             last_dmg_from: String::new(),
+            door_timer: 0,
         }
     }
 
@@ -1046,7 +1050,7 @@ impl GameMaster {
         fn spawn_loc(rng: &mut Rng) -> Pos {
             let min_x = 0;
             let max_x = WORLD_SIZE as i16 - 8;
-            let min_y = DIRT_START as i16 + 4;
+            let min_y = DIRT_START as i16 + 12;
             let max_y = WORLD_SIZE as i16 - 8;
             let x = rng.i16(min_x..max_x);
             let y = rng.i16(min_y..max_y);
@@ -1199,7 +1203,7 @@ impl GameMaster {
 
     fn player_collide_world(&mut self, cache: Pos) -> bool {
         // Collision with world
-        let mut collided = false;
+        let mut collided = 0;
         for dy in 0..PLAYER_SIZE {
             for dx in 0..PLAYER_SIZE {
                 let wx = (self.player_pos.x + dx as i16) as usize;
@@ -1207,16 +1211,17 @@ impl GameMaster {
                 if wx < WORLD_SIZE && wy < WORLD_SIZE {
                     if let Some(cell) = self.world_get(wx, wy) {
                         if cell {
-                            collided = true;
+                            collided += 1;
                         }
                     }
                 }
             }
         }
-        if collided {
+        if collided > 2 {
             self.player_pos = cache;
+            return false;
         }
-        collided
+        true
     }
 
     fn player_collide_misc(&mut self) {
@@ -1242,7 +1247,14 @@ impl GameMaster {
         // Check for collisions with doors
         let door_collide = self.collides_player(&self.door_loc, &Pos { x: 8, y: 8 });
         if door_collide {
-            self.next_level();
+            self.door_timer = self.door_timer.saturating_add(1);
+            self.sfx_door();
+            // Watch for game over, only allow level change if alive
+            if self.door_timer == DOOR_TIMER && self.hp > 0 {
+                self.next_level();
+            }
+        } else {
+            self.door_timer = 0;
         }
         // Check for powerup collection
         if !self.powerup_taken {
@@ -1305,6 +1317,12 @@ impl GameMaster {
         tone(f, 1, vol, TONE_PULSE2);
     }
 
+    fn sfx_door(&mut self) {
+        let add = self.door_timer as u32 * 8;
+        let f = (self.frame as f32 / 3.14).sin() * 100.0 + 120.0 + add as f32;
+        tone(f as u32, 32, 100, TONE_PULSE2);
+    }
+
     fn sfx_gold(&mut self) {
         let f = self.rng.u32(500..540);
         tone(f | (900 << 16), 4, 128, TONE_PULSE1);
@@ -1326,8 +1344,10 @@ impl GameMaster {
     }
 
     fn sfx_drill_warn(&mut self) {
-        let f = (self.drill_heat as f32 / self.drill_heat_max as f32) * 300.;
-        tone(650 + f as u32, 1, 128, TONE_TRIANGLE);
+        // let f = (self.drill_heat as f32 / self.drill_heat_max as f32) * 300.;
+        // tone(650 + f as u32, 1, 128, TONE_TRIANGLE);
+        let f = self.rng.u32(440..880);
+        tone(f | (1000 << 16), 4, 100, TONE_TRIANGLE);
     }
 
     fn sfx_explode(&mut self) {
@@ -1467,23 +1487,25 @@ impl GameMaster {
             }
         }
         for &i in hits_gold.iter().rev() {
-            self.gold_locs.retain(|gold| {
-                let wx = self.rain_locs[i].x as usize;
-                let wy = self.rain_locs[i].y as usize;
-                let hit = gold.x >= wx as i16
-                    && gold.x < (wx + 4) as i16
-                    && gold.y >= wy as i16
-                    && gold.y < (wy + 4) as i16;
-                !hit
-            });
-            // Remove a chunk of world where gold was
-            self.world_set_circle(
-                self.rain_locs[i].x as usize,
-                self.rain_locs[i].y as usize,
-                4,
-                false,
-            );
-            self.rain_locs.remove(i);
+            if i < self.rain_locs.len() {
+                self.gold_locs.retain(|gold| {
+                    let wx = self.rain_locs[i].x as usize;
+                    let wy = self.rain_locs[i].y as usize;
+                    let hit = gold.x >= wx as i16
+                        && gold.x < (wx + 4) as i16
+                        && gold.y >= wy as i16
+                        && gold.y < (wy + 4) as i16;
+                    !hit
+                });
+                // Remove a chunk of world where gold was
+                self.world_set_circle(
+                    self.rain_locs[i].x as usize,
+                    self.rain_locs[i].y as usize,
+                    4,
+                    false,
+                );
+                self.rain_locs.remove(i);
+            }
         }
     }
 
@@ -2310,7 +2332,7 @@ impl GameMaster {
         }
         self.seed += 1; // Increment seed while on start screen
         if self.input_check(BUTTON_2) {
-            self.no_input_frames = NO_INPUT_FRAMES / 2;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
             self.pal_index += 1;
             if self.pal_index >= PALS.len() {
                 self.pal_index = 0;
@@ -2326,7 +2348,7 @@ impl GameMaster {
             self.screen_set(Screen::Transition);
         }
         if self.input_check(BUTTON_UP) {
-            self.no_input_frames = NO_INPUT_FRAMES / 2;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.difficulty < MAX_DIFF {
                 self.difficulty = self.difficulty + 1;
                 if self.difficulty >= MAX_DIFF {
@@ -2336,7 +2358,7 @@ impl GameMaster {
             self.sfx_ok();
         }
         if self.input_check(BUTTON_DOWN) {
-            self.no_input_frames = NO_INPUT_FRAMES / 2;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
             self.auto_drill = !self.auto_drill;
             self.sfx_ok();
         }
@@ -2393,11 +2415,11 @@ impl GameMaster {
         }
         if self.purchased > 0 && self.input_check_any() {
             self.purchased = 0;
-            self.no_input_frames = NO_INPUT_FRAMES;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
         }
         if self.input_check(BUTTON_UP) {
             // Buy heart piece
-            self.no_input_frames = NO_INPUT_FRAMES;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_heart && self.hp < MAX_HP {
                 self.gold = self.gold.saturating_sub(self.cost_heart);
                 self.hp += 1;
@@ -2409,7 +2431,7 @@ impl GameMaster {
             }
         } else if self.input_check(BUTTON_LEFT) {
             // Buy drill speed
-            self.no_input_frames = NO_INPUT_FRAMES;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_drill_speed && self.drill_speed < 128 {
                 self.gold = self.gold.saturating_sub(self.cost_drill_speed);
                 self.drill_speed += 8;
@@ -2421,7 +2443,7 @@ impl GameMaster {
             }
         } else if self.input_check(BUTTON_RIGHT) {
             // Buy drill cooling
-            self.no_input_frames = NO_INPUT_FRAMES;
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_drill_cool && self.drill_heat_max < 1024 {
                 self.gold = self.gold.saturating_sub(self.cost_drill_cool);
                 self.drill_heat_max += 64;
@@ -2864,93 +2886,10 @@ impl GameMaster {
             );
             self.colors_set(1);
             oval(
-                self.player_pos.x as i32 - 3,
-                self.player_pos.y as i32 - 3,
-                PLAYER_SIZE as u32 + 6,
-                PLAYER_SIZE as u32 + 6,
-            );
-        }
-
-        // Render player
-        self.colors_set(4);
-        let player_flags = match self.dir {
-            0 => self.player_flags_last,
-            1 => BLIT_1BPP | BLIT_FLIP_X,
-            2 => BLIT_1BPP,
-            _ => self.player_flags_last,
-        };
-        self.player_flags_last = player_flags;
-        // let player_frame = (self.frame / 10) % 3;
-        // let mut player_sprite = match player_frame {
-        //     0 => &SMILEY1,
-        //     1 => &SMILEY2,
-        //     2 => &SMILEY3,
-        //     _ => &SMILEY1,
-        // };
-        let mut player_sprite = self.sprite_frame(12, vec![SMILEY1, SMILEY2, SMILEY3]);
-        if self.dir == 0 {
-            player_sprite = SMILEY1;
-        }
-        if self.hp == 0 {
-            player_sprite = SMILEYDEAD;
-        }
-        blit(
-            &player_sprite,
-            self.player_pos.x as i32,
-            self.player_pos.y as i32,
-            8,
-            PLAYER_SIZE as u32,
-            player_flags,
-        );
-
-        // Render drill
-        let drill_off = match self.dir {
-            0 => Pos::new(PLAYER_SIZE as i16, 0),
-            1 => Pos::new(-(PLAYER_SIZE as i16), 0),
-            2 => Pos::new(PLAYER_SIZE as i16, 0),
-            3 => Pos::new(0, PLAYER_SIZE as i16),
-            4 => Pos::new(-8, PLAYER_SIZE as i16),
-            5 => Pos::new(PLAYER_SIZE as i16, PLAYER_SIZE as i16),
-            6 => Pos::new(0, -(PLAYER_SIZE as i16)),
-            7 => Pos::new(-(PLAYER_SIZE as i16), -(PLAYER_SIZE as i16)),
-            8 => Pos::new(PLAYER_SIZE as i16, -(PLAYER_SIZE as i16)),
-            _ => Pos::new(PLAYER_SIZE as i16, 0),
-        };
-        let drill_flags = match self.dir {
-            0 => BLIT_1BPP,
-            1 => BLIT_1BPP | BLIT_FLIP_X,
-            2 => BLIT_1BPP,
-            3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
-            4 => BLIT_1BPP | BLIT_FLIP_X,
-            5 => BLIT_1BPP,
-            6 => BLIT_1BPP | BLIT_ROTATE,
-            7 => BLIT_1BPP | BLIT_ROTATE | BLIT_FLIP_Y,
-            8 => BLIT_1BPP | BLIT_ROTATE,
-            _ => BLIT_1BPP,
-        };
-        let drill_show = match self.dir {
-            0 => false,
-            _ => true,
-        };
-        if drill_show && self.is_drilling {
-            // let mut drill_sprite = if drill_frame == 0 { &DRILL1 } else { &DRILL2 };
-            let drill_sprite_n = self.sprite_frame(12, vec![DRILL1, DRILL2]);
-            let drill_sprite_d = self.sprite_frame(12, vec![DRILLD1, DRILLD2]);
-            let drill_sprite = match self.dir {
-                0..4 => drill_sprite_n,
-                4..6 => drill_sprite_d,
-                6 => drill_sprite_n,
-                7 => drill_sprite_d,
-                8 => drill_sprite_d,
-                _ => drill_sprite_n,
-            };
-            blit(
-                &drill_sprite,
-                (self.player_pos.x + drill_off.x) as i32,
-                (self.player_pos.y + drill_off.y) as i32,
-                8,
-                PLAYER_SIZE as u32,
-                drill_flags,
+                self.player_pos.x as i32 - 4,
+                self.player_pos.y as i32 - 4,
+                PLAYER_SIZE as u32 + 8,
+                PLAYER_SIZE as u32 + 8,
             );
         }
 
@@ -2974,6 +2913,9 @@ impl GameMaster {
         self.colors_set(1);
         rect(self.door_loc.x as i32, self.door_loc.y as i32, 8, 8);
         self.colors_set(4);
+        if self.door_timer > 0 {
+            self.color_flash(4, 2, 10);
+        }
         blit(
             &door_sprite,
             self.door_loc.x as i32,
@@ -3070,10 +3012,7 @@ impl GameMaster {
         for (i, bomber) in bomber_locs.iter().enumerate() {
             self.colors_set(4);
             if self.bomber_times[i] > 0 {
-                self.colors_set(3);
-                if self.bomber_times[i] % 20 < 10 {
-                    self.colors_set(4);
-                }
+                self.color_flash(4, 3, 32 + self.bomber_times[i] as u32 * 8);
             }
             blit(
                 &bomber_sprite,
@@ -3085,6 +3024,81 @@ impl GameMaster {
             );
         }
 
+        // Render player
+        self.colors_set(4);
+        let player_flags = match self.dir {
+            0 => self.player_flags_last,
+            1 => BLIT_1BPP | BLIT_FLIP_X,
+            2 => BLIT_1BPP,
+            _ => self.player_flags_last,
+        };
+        self.player_flags_last = player_flags;
+        let mut player_sprite = self.sprite_frame(12, vec![SMILEY1, SMILEY2, SMILEY3]);
+        if self.dir == 0 {
+            player_sprite = SMILEY1;
+        }
+        if self.hp == 0 {
+            player_sprite = SMILEYDEAD;
+        }
+        blit(
+            &player_sprite,
+            self.player_pos.x as i32,
+            self.player_pos.y as i32,
+            8,
+            PLAYER_SIZE as u32,
+            player_flags,
+        );
+
+        // Render drill
+        let drill_off = match self.dir {
+            0 => Pos::new(PLAYER_SIZE as i16, 0),
+            1 => Pos::new(-(PLAYER_SIZE as i16), 0),
+            2 => Pos::new(PLAYER_SIZE as i16, 0),
+            3 => Pos::new(0, PLAYER_SIZE as i16),
+            4 => Pos::new(-8, PLAYER_SIZE as i16),
+            5 => Pos::new(PLAYER_SIZE as i16, PLAYER_SIZE as i16),
+            6 => Pos::new(0, -(PLAYER_SIZE as i16)),
+            7 => Pos::new(-(PLAYER_SIZE as i16), -(PLAYER_SIZE as i16)),
+            8 => Pos::new(PLAYER_SIZE as i16, -(PLAYER_SIZE as i16)),
+            _ => Pos::new(PLAYER_SIZE as i16, 0),
+        };
+        let drill_flags = match self.dir {
+            0 => BLIT_1BPP,
+            1 => BLIT_1BPP | BLIT_FLIP_X,
+            2 => BLIT_1BPP,
+            3 => BLIT_1BPP | BLIT_FLIP_Y | BLIT_FLIP_X | BLIT_ROTATE,
+            4 => BLIT_1BPP | BLIT_FLIP_X,
+            5 => BLIT_1BPP,
+            6 => BLIT_1BPP | BLIT_ROTATE,
+            7 => BLIT_1BPP | BLIT_ROTATE | BLIT_FLIP_Y,
+            8 => BLIT_1BPP | BLIT_ROTATE,
+            _ => BLIT_1BPP,
+        };
+        let drill_show = match self.dir {
+            0 => false,
+            _ => true,
+        };
+        if drill_show && self.is_drilling {
+            // let mut drill_sprite = if drill_frame == 0 { &DRILL1 } else { &DRILL2 };
+            let drill_sprite_n = self.sprite_frame(12, vec![DRILL1, DRILL2]);
+            let drill_sprite_d = self.sprite_frame(12, vec![DRILLD1, DRILLD2]);
+            let drill_sprite = match self.dir {
+                0..4 => drill_sprite_n,
+                4..6 => drill_sprite_d,
+                6 => drill_sprite_n,
+                7 => drill_sprite_d,
+                8 => drill_sprite_d,
+                _ => drill_sprite_n,
+            };
+            blit(
+                &drill_sprite,
+                (self.player_pos.x + drill_off.x) as i32,
+                (self.player_pos.y + drill_off.y) as i32,
+                8,
+                PLAYER_SIZE as u32,
+                drill_flags,
+            );
+        }
         // Help text
         if self.has_drilled == false && self.lvl == 1 {
             self.colors_set(1);
