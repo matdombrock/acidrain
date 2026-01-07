@@ -11,8 +11,6 @@ Bomber system is messy
 
 Sliders should drop down
 
-Drill up to drop stuff?
-
 Wind should blow both directions
 
 Enemy collisions
@@ -34,3 +32,5 @@ distance check is not right, need to check from center
 overheat message?
 
 sandbox mode - just dig
+
+drill up and down at the same time

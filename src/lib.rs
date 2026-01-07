@@ -46,7 +46,7 @@ static MAX_HP: u8 = 8;
 static DOOR_TIMER: u16 = 128;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = true;
-static INVINCIBLE: bool = false;
+static INVINCIBLE: bool = true;
 
 // Color palettes
 static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
@@ -928,8 +928,7 @@ impl GameMaster {
                 1,
                 self.drill_speed,
             );
-        }
-        if drill_on && self.input_check(BUTTON_UP) {
+        } else if drill_on && self.input_check(BUTTON_UP) {
             self.is_drilling = true;
             self.has_drilled = true;
             self.dir = 6 + lr;
