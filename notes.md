@@ -32,5 +32,3 @@ distance check is not right, need to check from center
 overheat message?
 
 sandbox mode - just dig
-
-drill up and down at the same time

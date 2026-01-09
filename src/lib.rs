@@ -46,7 +46,7 @@ static MAX_HP: u8 = 8;
 static DOOR_TIMER: u16 = 128;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = true;
-static INVINCIBLE: bool = true;
+static INVINCIBLE: bool = false;
 
 // Color palettes
 static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
@@ -2512,7 +2512,7 @@ impl GameMaster {
                 self.colors_set(3);
             }
             let rain = &self.rain_locs[i];
-            rect(rain.x as i32, rain.y as i32, 1, 1);
+            rect(rain.x as i32, rain.y as i32, 1, 2);
         }
     }
 
