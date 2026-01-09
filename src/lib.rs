@@ -657,7 +657,7 @@ impl LVlSettings {
 }
 
 const LVLS: [LVlSettings; MAX_LVL] = [
-    // Zero is not used
+    // Zero is for special modes
     // NOTE: IDK why I built it like this
     LVlSettings {
         drone_limit: 0,
@@ -670,7 +670,9 @@ const LVLS: [LVlSettings; MAX_LVL] = [
         rain_amount_rte: 1000,
         rain_acidity: 0,
         gold_amt: 8,
-        text: b"\x84\x87\x85a",
+        text: b"First
+time
+huh?",
     },
     // This is the first real level
     LVlSettings {
@@ -715,7 +717,9 @@ here...",
         rain_amount_rte: 300,
         rain_acidity: 10,
         gold_amt: 32,
-        text: b"THE END?",
+        text: b"Slump
+day
+...",
     },
     LVlSettings {
         drone_limit: 4,
@@ -728,7 +732,10 @@ here...",
         rain_amount_rte: 140,
         rain_acidity: 20,
         gold_amt: 48,
-        text: b"THE END?",
+        text: b"Who's
+drones
+are
+these?",
     },
     LVlSettings {
         drone_limit: 2,
@@ -741,7 +748,10 @@ here...",
         rain_amount_rte: 120,
         rain_acidity: 30,
         gold_amt: 64,
-        text: b"THE END?",
+        text: b"To feel
+unwanted
+is to feel
+unstoppable",
     },
     LVlSettings {
         drone_limit: 6,
@@ -754,7 +764,11 @@ here...",
         rain_amount_rte: 100,
         rain_acidity: 40,
         gold_amt: 64,
-        text: b"THE END?",
+        text: b"I never
+want to 
+see you 
+in the 
+acid rain",
     },
     LVlSettings {
         drone_limit: 7,
@@ -786,6 +800,7 @@ struct GameMaster {
     frame: u32,
     lvl: usize,
     difficulty: u8,
+    game_mode: u8, // 0=arcade, 1=sandbox, 2=endless
     hp: u8,
     player_pos: Pos,
     dir: u8, // 0=none,1=left,2=right,3=down,4=left+down,5=right+down
@@ -832,8 +847,9 @@ impl GameMaster {
             rng: Rng::new(),
             seed: 0,
             frame: 0,
-            lvl: 0,
+            lvl: 6,
             difficulty: 1,
+            game_mode: 0,
             hp: 4,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
@@ -896,6 +912,9 @@ impl GameMaster {
     }
 
     fn input_main(&mut self) {
+        if self.hp < 1 && !INVINCIBLE {
+            return;
+        }
         let pos_cache = self.player_pos;
         let mut drill_on = false;
         if self.input_check(BUTTON_1) || self.auto_drill {
@@ -977,6 +996,7 @@ impl GameMaster {
     }
 
     fn world_reset(&mut self) {
+        let game_mode = self.game_mode;
         let gold = self.gold;
         let rng = self.rng.clone();
         let lvl = self.lvl;
@@ -989,6 +1009,7 @@ impl GameMaster {
 
         *self = GameMaster::new();
 
+        self.game_mode = game_mode;
         self.gold = gold;
         self.rng = rng;
         self.lvl = lvl;
@@ -1250,6 +1271,11 @@ impl GameMaster {
             self.sfx_door();
             // Watch for game over, only allow level change if alive
             if self.door_timer == DOOR_TIMER && self.hp > 0 {
+                if self.game_mode == 1 {
+                    // Training
+                    self.screen_set(Screen::Start);
+                    return;
+                }
                 self.next_level();
             }
         } else {
@@ -1366,11 +1392,13 @@ impl GameMaster {
     }
 
     fn next_level(&mut self) {
-        self.lvl += 1;
-        // Check if we just completed the last level
-        if self.lvl >= MAX_LVL - 1 {
-            self.screen_set(Screen::GameOver);
-            return;
+        if self.game_mode == 0 {
+            self.lvl += 1;
+            // Check if we just completed the last level
+            if self.lvl > MAX_LVL - 1 {
+                self.screen_set(Screen::GameOver);
+                return;
+            }
         }
         self.world_reset();
         self.cur_lvl_data = LVLS[self.lvl];
@@ -2361,6 +2389,15 @@ impl GameMaster {
             self.auto_drill = !self.auto_drill;
             self.sfx_ok();
         }
+        if self.input_check(BUTTON_RIGHT) {
+            self.no_input_frames = NO_INPUT_FRAMES_SH;
+            self.game_mode += 1;
+            if self.game_mode > 1 {
+                // Limit to just sandbox for now
+                self.game_mode = 0;
+            }
+            self.sfx_ok();
+        }
         self.up_rain_pos(50, 60, RAIN_MAX / 2, 5);
     }
 
@@ -2390,7 +2427,7 @@ impl GameMaster {
         }
 
         // Check for game over
-        if self.hp == 0 && !INVINCIBLE {
+        if self.hp < 1 && !INVINCIBLE {
             self.gameover_acc += 1;
             if self.gameover_acc > 120 {
                 self.gameover_acc = 120;
@@ -2633,7 +2670,12 @@ impl GameMaster {
         ];
         let diff_str = diff_strs[self.difficulty as usize];
         let drill_str = if self.auto_drill { "AUTO" } else { "MANUAL" };
-        let mode_str = "ARCADE";
+        let mode_str = match self.game_mode {
+            0 => "ARCADE",
+            1 => "TRAIN",
+            2 => "INFNTY",
+            _ => "NORMAL",
+        };
         self.colors_set(3);
         text(b"\x86LVL", 95, 12);
         self.colors_set(4);
@@ -2786,7 +2828,7 @@ impl GameMaster {
         if self.screen != Screen::GameOver {
             return;
         }
-        let won = self.lvl == MAX_LVL - 1;
+        let won = self.lvl == MAX_LVL - 1 && self.hp > 0;
         self.palette_set(PAL_DMG);
         self.colors_set(1);
         rect(0, 0, 160, 160);
