@@ -840,6 +840,12 @@ struct GameMaster {
     pal_index: usize,
     last_dmg_from: String,
     door_timer: u16,
+    stat_collected: u16,
+    stat_spent: u16,
+    stat_drilled: u16,
+    stat_survived: u16,
+    stat_dmg: u16,
+    stat_powerups: u16,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -892,6 +898,12 @@ impl GameMaster {
             pal_index: 0,
             last_dmg_from: String::new(),
             door_timer: 0,
+            stat_collected: 0,
+            stat_spent: 0,
+            stat_drilled: 0,
+            stat_survived: 0,
+            stat_dmg: 0,
+            stat_powerups: 0,
         }
     }
 
@@ -1170,6 +1182,7 @@ impl GameMaster {
                 let wy = y + dy;
                 if self.rng.i32(0..128) < chance as i32 || self.powerup_cur == PowerUp::SuperDrill {
                     self.world_set(wx, wy, false);
+                    self.stat_drilled += 1;
                     sfx = true;
                 }
             }
@@ -1258,6 +1271,7 @@ impl GameMaster {
                     GM.sfx_gold();
                     GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
                     GM.gold += 1;
+                    GM.stat_collected += 1;
                     false
                 } else {
                     true
@@ -1286,6 +1300,7 @@ impl GameMaster {
             let pu_collide = self.collides_player(&self.powerup_loc, &Pos { x: 8, y: 8 });
             if pu_collide {
                 self.powerup_taken = true;
+                self.stat_powerups += 1;
                 self.sfx_ok();
                 // Random powerup
                 let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
@@ -1320,6 +1335,7 @@ impl GameMaster {
         }
         self.dmg_frames = DMG_FRAMES;
         self.hp = self.hp.saturating_sub(1);
+        self.stat_dmg += 1;
         self.sfx_dmg();
         trace(format!("DMG FROM: {}: HP={}", from, self.hp));
         self.last_dmg_from = from.to_string();
@@ -2434,6 +2450,8 @@ impl GameMaster {
                 self.screen_set(Screen::GameOver);
             }
         }
+
+        self.stat_survived += 1;
     }
 
     fn up_sc_transition(&mut self) {
@@ -2458,6 +2476,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_heart && self.hp < MAX_HP {
                 self.gold = self.gold.saturating_sub(self.cost_heart);
+                self.stat_spent += self.cost_heart;
                 self.hp += 1;
                 self.purchased = 1;
                 self.sfx_ok();
@@ -2470,6 +2489,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_drill_speed && self.drill_speed < 128 {
                 self.gold = self.gold.saturating_sub(self.cost_drill_speed);
+                self.stat_spent += self.cost_drill_speed;
                 self.drill_speed += 8;
                 self.purchased = 2;
                 self.sfx_ok();
@@ -2482,6 +2502,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_drill_cool && self.drill_heat_max < 1024 {
                 self.gold = self.gold.saturating_sub(self.cost_drill_cool);
+                self.stat_spent += self.cost_drill_cool;
                 self.drill_heat_max += 64;
                 self.purchased = 3;
                 self.sfx_ok();
@@ -2829,17 +2850,63 @@ impl GameMaster {
             return;
         }
         let won = self.lvl == MAX_LVL - 1 && self.hp > 0;
-        self.palette_set(PAL_DMG);
+        if !won {
+            self.palette_set(PAL_DMG);
+        }
         self.colors_set(1);
         rect(0, 0, 160, 160);
         self.colors_set(4);
-        let over_text = if won { "YOU   WIN" } else { "GAME OVER" };
+        let over_text = if won { "YOU WIN!" } else { "GAME OVER!" };
         self.colors_set(2);
-        text(over_text, 45, 60);
+        text(over_text, 15, 20);
         self.colors_set(4);
-        text(over_text, 46, 61);
-        self.colors_set(4);
-        self.render_gold_text(50, 80, self.gold);
+        text(over_text, 16, 21);
+        line(12, 32, 130, 32);
+        line(0, 32, 160, 32);
+        self.colors_set(3);
+        text("COLLECTED", 16, 40);
+        self.render_gold_text(25, 50, self.stat_collected);
+        text("SPENT", 16, 65);
+        self.render_gold_text(25, 75, self.stat_spent);
+        text("FINAL", 16, 90);
+        self.render_gold_text(25, 100, self.gold);
+        let stat_index = (self.frame / 120) % 4;
+        let stat_text = match stat_index {
+            0 => "DRILLED",
+            1 => "SURVIVED",
+            2 => "DMG TAKEN",
+            3 => "POWERUPS",
+            _ => "",
+        };
+        let stat_value = match stat_index {
+            0 => self.stat_drilled,
+            1 => self.stat_survived,
+            2 => self.stat_dmg,
+            3 => self.stat_powerups,
+            _ => 0,
+        };
+        self.colors_set(2);
+        line(0, 120, 160, 120);
+        rect(0, 120, 160, 38);
+        self.colors_set(1);
+        text(format!("{}\n {}", stat_text, stat_value), 16, 130);
+        // for i in 0..160 {
+        //     let sina = (self.frame as f32 / 320.).sin() * 2.0;
+        //     let sin = ((self.frame as f32 / 16.) + (i as f32 / (4. + sina))).sin();
+        //     let y = (sin * 4.0 + 125.0) as i32;
+        //     rect(y + 10, 160 - i as i32, 30, 1);
+        // }
+        self.colors_set(3);
+        for i in 0..160 {
+            let sina = (self.frame as f32 / 320.).sin() * 2.0;
+            let sin = ((self.frame as f32 / 16.) + (i as f32 / (4. + sina))).sin();
+            let z = (sin * 2.0 + 155.0) as i32;
+            self.colors_set((i + (self.frame as u16 / 32)) % 2 + 1);
+            rect(i as i32, 0, 1, (160 - z) as u32);
+            rect(160 - i as i32, z, 1, (160 - z) as u32);
+            rect(0, i as i32, (160 - z) as u32, 1);
+            rect(z, 160 - i as i32, 10, 1);
+        }
     }
 
     fn render_sc_main(&mut self) {
