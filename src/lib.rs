@@ -889,7 +889,7 @@ impl GameMaster {
             no_input_frames: 0,
             has_drilled: false,
             is_drilling: false,
-            screen: Screen::Shop,
+            screen: Screen::Intro,
             cost_heart: 8,
             cost_drill_speed: 16,
             cost_drill_cool: 16,
@@ -2670,10 +2670,8 @@ impl GameMaster {
         self.colors_set(2);
         text("MATHIEU/\nDOMBROCK\n2025////", 12, 50);
         self.colors_set(3);
-        if (self.frame / 32) % 2 == 0 {
-            self.colors_set(4);
-        }
         let sx = ((self.frame as f32 / 8.).sin() * 2.0) as i32;
+        self.color_flash(3, 4, 64);
         text(b"PRESS \x80 TO START", 17 + sx, 105);
         self.colors_set(3);
         let x = 10;
@@ -2699,15 +2697,19 @@ impl GameMaster {
             _ => "NORMAL",
         };
         self.colors_set(3);
-        text(b"\x86LVL", 95, 12);
+        text(b" LVL", 95, 12);
         self.colors_set(4);
         text(diff_str, 104, 22);
         self.colors_set(3);
-        text(b"\x87DRILL", 95, 32);
+        text(b" DRILL", 95, 32);
         self.colors_set(4);
         text(drill_str, 104, 42);
         self.colors_set(3);
-        text(b"\x85MODE", 95, 52);
+        text(b" MODE", 95, 52);
+        self.color_flash(2, 3, 64);
+        text(b"\x86", 92, 12);
+        text(b"\x87", 92, 32);
+        text(b"\x85", 92, 52);
         self.colors_set(4);
         text(mode_str, 104, 62);
         //
