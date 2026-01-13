@@ -889,7 +889,7 @@ impl GameMaster {
             no_input_frames: 0,
             has_drilled: false,
             is_drilling: false,
-            screen: Screen::Intro,
+            screen: Screen::Shop,
             cost_heart: 8,
             cost_drill_speed: 16,
             cost_drill_cool: 16,
@@ -2467,6 +2467,10 @@ impl GameMaster {
         if self.screen != Screen::Shop {
             return;
         }
+        fn bad_purchase(gm: &mut GameMaster) {
+            gm.sfx_deny();
+            gm.dmg_frames = DMG_FRAMES * 2;
+        }
         if self.purchased > 0 && self.input_check_any() {
             self.purchased = 0;
             self.no_input_frames = NO_INPUT_FRAMES_SH;
@@ -2481,8 +2485,7 @@ impl GameMaster {
                 self.purchased = 1;
                 self.sfx_ok();
             } else {
-                self.sfx_deny();
-                self.dmg_frames = DMG_FRAMES;
+                bad_purchase(self);
             }
         } else if self.input_check(BUTTON_LEFT) {
             // Buy drill speed
@@ -2494,8 +2497,7 @@ impl GameMaster {
                 self.purchased = 2;
                 self.sfx_ok();
             } else {
-                self.sfx_deny();
-                self.dmg_frames = DMG_FRAMES;
+                bad_purchase(self);
             }
         } else if self.input_check(BUTTON_RIGHT) {
             // Buy drill cooling
@@ -2507,8 +2509,7 @@ impl GameMaster {
                 self.purchased = 3;
                 self.sfx_ok();
             } else {
-                self.sfx_deny();
-                self.dmg_frames = DMG_FRAMES;
+                bad_purchase(self);
             }
         } else if self.input_check(BUTTON_DOWN) {
             self.screen_set(Screen::Transition);
@@ -2715,83 +2716,97 @@ impl GameMaster {
     }
 
     fn render_sc_shop(&mut self) {
-        if self.screen == Screen::Shop {
+        if self.screen != Screen::Shop {
+            return;
+        }
+        self.colors_set(1);
+        rect(0, 0, 160, 160);
+        self.colors_set(3);
+        rect(0, 0, 160, 80);
+        self.colors_set(1);
+        // Sine
+        for x in 0..160 {
+            let sina = (self.frame as f32 / 320.).sin() * 2.0;
+            let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
+            let y = (sin * 8.0 + 32.0) as i32;
+            rect(x as i32, y, 1, (160 - y) as u32);
+        }
+        self.render_rain();
+        self.colors_set(2);
+        let sy = (self.frame as f32 / 8.).sin() * 2.0;
+        text("UPGRADE SHOP!", 29, 6 + sy as i32);
+        self.colors_set(4);
+        text("UPGRADE SHOP!", 30, 7 + sy as i32);
+        self.colors_set(2);
+        self.render_gold_text(49, 14 + sy as i32, self.gold);
+        self.colors_set(4);
+        self.render_gold_text(50, 15 + sy as i32, self.gold);
+        self.colors_set(3);
+        vline(115, 45, 80);
+        // Up
+        text(b" HEART PIECE", 15, 50);
+        self.render_gold_text(120, 50, self.cost_heart);
+        text(format!("{}/8", self.hp), 24, 60);
+        // Left
+        text(b" DRILL SPEED", 15, 80);
+        self.render_gold_text(120, 80, self.cost_drill_speed);
+        text(format!("{}/128", self.drill_speed), 24, 90);
+        // Right
+        text(b" DRILL COOLR", 15, 110);
+        self.color_flash(2, 3, 64);
+        text(b"\x84", 12, 80);
+        text(b"\x86", 12, 50);
+        text(b"\x85", 12, 110);
+        self.colors_set(3);
+        self.render_gold_text(120, 110, self.cost_drill_cool);
+        text(format!("{}/1024", self.drill_heat_max), 24, 120);
+        // Down
+        self.colors_set(4);
+        hline(0, 135, 160);
+        text(b"\x87NEXT  LEVEL", 33, 145);
+
+        // Purchased
+        if self.purchased > 0 {
+            self.colors_set(1);
+            rect(0, 45, 160, 120);
+            self.colors_set(4);
+            text("PURCHASED!", 42, 60);
+            let mut pur_string = String::new();
+            let mut amt_string = String::new();
+            match self.purchased {
+                1 => {
+                    pur_string = "HEART PIECE".to_string();
+                    amt_string = format!("{}/{}", self.hp, 8);
+                }
+                2 => {
+                    pur_string = "DRILL SPEED".to_string();
+                    amt_string = format!("{}/{}", self.drill_speed, 128);
+                }
+                3 => {
+                    pur_string = "DRILL COOLR".to_string();
+                    amt_string = format!("{}/{}", self.drill_heat_max, 1024);
+                }
+                _ => {}
+            }
+            self.colors_set(3);
+            text(pur_string, 38, 80);
+            self.colors_set(4);
+            text(amt_string, 38, 90);
+            self.colors_set(3);
+            for x in 0..160 {
+                let sina = -(self.frame as f32 / 320.).sin() * 2.0;
+                let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
+                let y = (sin * 8.0 + 32.0) as i32;
+                rect(x as i32, y + 100, 1, (160 - y) as u32);
+            }
+        }
+
+        // Bad purchase
+        if self.dmg_frames > 0 {
             self.colors_set(1);
             rect(0, 0, 160, 160);
             self.colors_set(3);
-            rect(0, 0, 160, 80);
-            self.colors_set(1);
-            // Sine
-            for x in 0..160 {
-                let sina = (self.frame as f32 / 320.).sin() * 2.0;
-                let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
-                let y = (sin * 8.0 + 32.0) as i32;
-                rect(x as i32, y, 1, (160 - y) as u32);
-            }
-            self.render_rain();
-            self.colors_set(2);
-            let sy = (self.frame as f32 / 8.).sin() * 2.0;
-            text("UPGRADES!", 48, 6 + sy as i32);
-            self.colors_set(4);
-            text("UPGRADES!", 49, 7 + sy as i32);
-            self.colors_set(2);
-            self.render_gold_text(49, 14 + sy as i32, self.gold);
-            self.colors_set(4);
-            self.render_gold_text(50, 15 + sy as i32, self.gold);
-            self.colors_set(3);
-            vline(115, 45, 80);
-            // Up
-            text(b"\x86HEART PIECE", 15, 50);
-            self.render_gold_text(120, 50, self.cost_heart);
-            text(format!("{}/8", self.hp), 24, 60);
-            // Left
-            text(b"\x84DRILL SPEED", 15, 80);
-            self.render_gold_text(120, 80, self.cost_drill_speed);
-            text(format!("{}/128", self.drill_speed), 24, 90);
-            // Righ
-            text(b"\x85DRILL COOLR", 15, 110);
-            self.render_gold_text(120, 110, self.cost_drill_cool);
-            text(format!("{}/1024", self.drill_heat_max), 24, 120);
-            // Down
-            self.colors_set(4);
-            hline(0, 135, 160);
-            text(b"\x87NEXT  LEVEL", 33, 145);
-
-            // Purchased
-            if self.purchased > 0 {
-                self.colors_set(1);
-                rect(0, 45, 160, 120);
-                self.colors_set(4);
-                text("PURCHASED!", 42, 60);
-                let mut pur_string = String::new();
-                let mut amt_string = String::new();
-                match self.purchased {
-                    1 => {
-                        pur_string = "HEART PIECE".to_string();
-                        amt_string = format!("{}/{}", self.hp, 8);
-                    }
-                    2 => {
-                        pur_string = "DRILL SPEED".to_string();
-                        amt_string = format!("{}/{}", self.drill_speed, 128);
-                    }
-                    3 => {
-                        pur_string = "DRILL COOLR".to_string();
-                        amt_string = format!("{}/{}", self.drill_heat_max, 1024);
-                    }
-                    _ => {}
-                }
-                self.colors_set(3);
-                text(pur_string, 38, 80);
-                self.colors_set(4);
-                text(amt_string, 38, 90);
-                self.colors_set(3);
-                for x in 0..160 {
-                    let sina = -(self.frame as f32 / 320.).sin() * 2.0;
-                    let sin = ((self.frame as f32 / 10.) + (x as f32 / (4. + sina))).sin();
-                    let y = (sin * 8.0 + 32.0) as i32;
-                    rect(x as i32, y + 100, 1, (160 - y) as u32);
-                }
-            }
+            text("YOU CAN'T\nAFFORD THAT!", 22, 80);
         }
     }
 
