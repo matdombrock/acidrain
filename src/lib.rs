@@ -2714,7 +2714,7 @@ impl GameMaster {
         text(mode_str, 104, 62);
         //
         self.colors_set(1);
-        text("GPLv3        v0.9", 13, 150);
+        text("GPLv3        v0.95", 13, 150);
     }
 
     fn render_sc_shop(&mut self) {
