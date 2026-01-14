@@ -2,7 +2,7 @@
 
 A quick roguelite game written in Rust for the [WASM-4](https://wasm4.org) fantasy console.
 
-![_doc/title.png]
+![title.png](_doc/title.png)
 
 ## Building
 
