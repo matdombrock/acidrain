@@ -46,7 +46,6 @@ static MAX_HP: u8 = 8;
 static DOOR_TIMER: u16 = 128;
 static DIRT_START: u8 = 24;
 static MUSIC_ENABLED: bool = true;
-static INVINCIBLE: bool = false;
 
 // Color palettes
 static PAL_OG: [u32; 4] = [0x001105, 0x506655, 0xA0FFA5, 0xB0FFB5]; // OG
@@ -650,15 +649,23 @@ impl LVlSettings {
         self.drone_limit *= difficulty as usize;
         self.fly_limit *= difficulty as usize;
         self.slider_limit *= difficulty as usize;
-        self.drone_rte = self.drone_rte.saturating_div(difficulty as u16);
-        self.rain_chance_rte = self.rain_chance_rte.saturating_div(difficulty as u16);
-        self.rain_amount_rte = self.rain_amount_rte.saturating_div(difficulty as u16);
+        self.seeker_limit *= difficulty as usize;
+        self.bomber_limit *= difficulty as usize;
+        if difficulty >= 1 {
+            self.drone_rte = self.drone_rte.saturating_div(difficulty as u16);
+            self.rain_chance_rte = self.rain_chance_rte.saturating_div(difficulty as u16);
+            self.rain_amount_rte = self.rain_amount_rte.saturating_div(difficulty as u16);
+        } else {
+            // Avoid div by 0
+            self.drone_rte = 999;
+            self.rain_chance_rte = 999;
+            self.rain_amount_rte = 999;
+        }
     }
 }
 
 const LVLS: [LVlSettings; MAX_LVL] = [
     // Zero is for special modes
-    // NOTE: IDK why I built it like this
     LVlSettings {
         drone_limit: 0,
         fly_limit: 0,
@@ -677,10 +684,10 @@ huh?",
     // This is the first real level
     LVlSettings {
         drone_limit: 0,
-        fly_limit: 2,
+        fly_limit: 1,
         slider_limit: 0,
         seeker_limit: 0,
-        bomber_limit: 2,
+        bomber_limit: 1,
         drone_rte: 100,
         rain_chance_rte: 600,
         rain_amount_rte: 600,
@@ -693,10 +700,10 @@ DRILL",
     },
     LVlSettings {
         drone_limit: 0,
-        fly_limit: 3,
+        fly_limit: 2,
         slider_limit: 0,
         seeker_limit: 0,
-        bomber_limit: 3,
+        bomber_limit: 2,
         drone_rte: 250,
         rain_chance_rte: 300,
         rain_amount_rte: 300,
@@ -708,7 +715,7 @@ here...",
     },
     LVlSettings {
         drone_limit: 0,
-        fly_limit: 4,
+        fly_limit: 3,
         slider_limit: 3,
         seeker_limit: 0,
         bomber_limit: 3,
@@ -724,9 +731,9 @@ day
     LVlSettings {
         drone_limit: 4,
         fly_limit: 5,
-        slider_limit: 4,
+        slider_limit: 2,
         seeker_limit: 0,
-        bomber_limit: 2,
+        bomber_limit: 1,
         drone_rte: 150,
         rain_chance_rte: 100,
         rain_amount_rte: 140,
@@ -739,8 +746,8 @@ these?",
     },
     LVlSettings {
         drone_limit: 2,
-        fly_limit: 6,
-        slider_limit: 5,
+        fly_limit: 2,
+        slider_limit: 3,
         seeker_limit: 3,
         bomber_limit: 2,
         drone_rte: 120,
@@ -755,9 +762,9 @@ unstoppable",
     },
     LVlSettings {
         drone_limit: 6,
-        fly_limit: 7,
-        slider_limit: 6,
-        seeker_limit: 3,
+        fly_limit: 10,
+        slider_limit: 3,
+        seeker_limit: 1,
         bomber_limit: 4,
         drone_rte: 100,
         rain_chance_rte: 50,
@@ -771,12 +778,12 @@ in the
 acid rain",
     },
     LVlSettings {
-        drone_limit: 7,
+        drone_limit: 10,
         fly_limit: 8,
         slider_limit: 7,
-        seeker_limit: 4,
+        seeker_limit: 3,
         bomber_limit: 4,
-        drone_rte: 80,
+        drone_rte: 50,
         rain_chance_rte: 40,
         rain_amount_rte: 80,
         rain_acidity: 60,
@@ -794,14 +801,37 @@ enum PowerUp {
 }
 const POWERUP_TYPES: [PowerUp; 3] = [PowerUp::SuperDrill, PowerUp::Invincible, PowerUp::Magnet];
 
+#[derive(Copy, Clone)]
+struct Stats {
+    collected: u16,
+    spent: u16,
+    drilled: u16,
+    survived: u16,
+    dmg: u16,
+    powerups: u16,
+}
+impl Stats {
+    fn new() -> Self {
+        Self {
+            collected: 0,
+            spent: 0,
+            drilled: 0,
+            survived: 0,
+            dmg: 0,
+            powerups: 0,
+        }
+    }
+}
+
 struct GameMaster {
     rng: Rng,
     seed: u64,
     frame: u32,
     lvl: usize,
     difficulty: u8,
-    game_mode: u8, // 0=arcade, 1=sandbox, 2=endless
+    game_mode: u8,
     hp: u8,
+    invincible: bool,
     player_pos: Pos,
     dir: u8, // 0=none,1=left,2=right,3=down,4=left+down,5=right+down
     world: MiniBitVec,
@@ -840,12 +870,7 @@ struct GameMaster {
     pal_index: usize,
     last_dmg_from: String,
     door_timer: u16,
-    stat_collected: u16,
-    stat_spent: u16,
-    stat_drilled: u16,
-    stat_survived: u16,
-    stat_dmg: u16,
-    stat_powerups: u16,
+    stats: Stats,
 }
 impl GameMaster {
     fn new() -> Self {
@@ -854,9 +879,10 @@ impl GameMaster {
             seed: 0,
             frame: 0,
             lvl: 0,
-            difficulty: 1,
+            difficulty: 2,
             game_mode: 0,
             hp: 4,
+            invincible: false,
             player_pos: Pos { x: 48, y: 0 },
             dir: 0,
             world: MiniBitVec {
@@ -898,12 +924,7 @@ impl GameMaster {
             pal_index: 0,
             last_dmg_from: String::new(),
             door_timer: 0,
-            stat_collected: 0,
-            stat_spent: 0,
-            stat_drilled: 0,
-            stat_survived: 0,
-            stat_dmg: 0,
-            stat_powerups: 0,
+            stats: Stats::new(),
         }
     }
 
@@ -924,7 +945,7 @@ impl GameMaster {
     }
 
     fn input_main(&mut self) {
-        if self.hp < 1 && !INVINCIBLE {
+        if self.hp < 1 && !self.invincible {
             return;
         }
         let pos_cache = self.player_pos;
@@ -1018,6 +1039,7 @@ impl GameMaster {
         let drill_speed = self.drill_speed;
         let drill_heat_max = self.drill_heat_max;
         let pal_index = self.pal_index;
+        let stats = self.stats;
 
         *self = GameMaster::new();
 
@@ -1031,6 +1053,7 @@ impl GameMaster {
         self.drill_speed = drill_speed;
         self.drill_heat_max = drill_heat_max;
         self.pal_index = pal_index;
+        self.stats = stats;
     }
 
     fn world_gen(&mut self) {
@@ -1182,7 +1205,7 @@ impl GameMaster {
                 let wy = y + dy;
                 if self.rng.i32(0..128) < chance as i32 || self.powerup_cur == PowerUp::SuperDrill {
                     self.world_set(wx, wy, false);
-                    self.stat_drilled += 1;
+                    self.stats.drilled += 1;
                     sfx = true;
                 }
             }
@@ -1271,7 +1294,7 @@ impl GameMaster {
                     GM.sfx_gold();
                     GM.drill_heat = GM.drill_heat.saturating_sub(GM.drill_heat_max / 10);
                     GM.gold += 1;
-                    GM.stat_collected += 1;
+                    GM.stats.collected += 1;
                     false
                 } else {
                     true
@@ -1300,7 +1323,7 @@ impl GameMaster {
             let pu_collide = self.collides_player(&self.powerup_loc, &Pos { x: 8, y: 8 });
             if pu_collide {
                 self.powerup_taken = true;
-                self.stat_powerups += 1;
+                self.stats.powerups += 1;
                 self.sfx_ok();
                 // Random powerup
                 let pu_index = self.rng.u32(0..POWERUP_TYPES.len() as u32) as usize;
@@ -1335,7 +1358,7 @@ impl GameMaster {
         }
         self.dmg_frames = DMG_FRAMES;
         self.hp = self.hp.saturating_sub(1);
-        self.stat_dmg += 1;
+        self.stats.dmg += 1;
         self.sfx_dmg();
         trace(format!("DMG FROM: {}: HP={}", from, self.hp));
         self.last_dmg_from = from.to_string();
@@ -1408,7 +1431,7 @@ impl GameMaster {
     }
 
     fn next_level(&mut self) {
-        if self.game_mode == 0 {
+        if self.game_mode != 1 {
             self.lvl += 1;
             // Check if we just completed the last level
             if self.lvl > MAX_LVL - 1 {
@@ -2408,10 +2431,11 @@ impl GameMaster {
         if self.input_check(BUTTON_RIGHT) {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             self.game_mode += 1;
-            if self.game_mode > 1 {
-                // Limit to just sandbox for now
+            // Wrap
+            if self.game_mode > 2 {
                 self.game_mode = 0;
             }
+            self.invincible = self.game_mode == 2;
             self.sfx_ok();
         }
         self.up_rain_pos(50, 60, RAIN_MAX / 2, 5);
@@ -2443,7 +2467,7 @@ impl GameMaster {
         }
 
         // Check for game over
-        if self.hp < 1 && !INVINCIBLE {
+        if self.hp < 1 && !self.invincible {
             self.gameover_acc += 1;
             if self.gameover_acc > 120 {
                 self.gameover_acc = 120;
@@ -2451,7 +2475,7 @@ impl GameMaster {
             }
         }
 
-        self.stat_survived += 1;
+        self.stats.survived += 1;
     }
 
     fn up_sc_transition(&mut self) {
@@ -2480,7 +2504,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_heart && self.hp < MAX_HP {
                 self.gold = self.gold.saturating_sub(self.cost_heart);
-                self.stat_spent += self.cost_heart;
+                self.stats.spent += self.cost_heart;
                 self.hp += 1;
                 self.purchased = 1;
                 self.sfx_ok();
@@ -2492,7 +2516,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_drill_speed && self.drill_speed < 128 {
                 self.gold = self.gold.saturating_sub(self.cost_drill_speed);
-                self.stat_spent += self.cost_drill_speed;
+                self.stats.spent += self.cost_drill_speed;
                 self.drill_speed += 8;
                 self.purchased = 2;
                 self.sfx_ok();
@@ -2504,7 +2528,7 @@ impl GameMaster {
             self.no_input_frames = NO_INPUT_FRAMES_SH;
             if self.gold >= self.cost_drill_cool && self.drill_heat_max < 1024 {
                 self.gold = self.gold.saturating_sub(self.cost_drill_cool);
-                self.stat_spent += self.cost_drill_cool;
+                self.stats.spent += self.cost_drill_cool;
                 self.drill_heat_max += 64;
                 self.purchased = 3;
                 self.sfx_ok();
@@ -2693,8 +2717,8 @@ impl GameMaster {
         let mode_str = match self.game_mode {
             0 => "ARCADE",
             1 => "TRAIN",
-            2 => "INFNTY",
-            _ => "NORMAL",
+            2 => "ZOMBIE",
+            _ => "ARCADE",
         };
         self.colors_set(3);
         text(b" LVL", 95, 12);
@@ -2714,7 +2738,7 @@ impl GameMaster {
         text(mode_str, 104, 62);
         //
         self.colors_set(1);
-        text("GPLv3        v0.95", 13, 150);
+        text("GPLv3        v0.96", 13, 150);
     }
 
     fn render_sc_shop(&mut self) {
@@ -2866,7 +2890,7 @@ impl GameMaster {
         if self.screen != Screen::GameOver {
             return;
         }
-        let won = self.lvl == MAX_LVL - 1 && self.hp > 0;
+        let won = self.lvl > MAX_LVL - 1 && self.hp > 0;
         if !won {
             self.palette_set(PAL_DMG);
         }
@@ -2882,9 +2906,9 @@ impl GameMaster {
         line(0, 32, 160, 32);
         self.colors_set(3);
         text("COLLECTED", 16, 40);
-        self.render_gold_text(25, 50, self.stat_collected);
+        self.render_gold_text(25, 50, self.stats.collected);
         text("SPENT", 16, 65);
-        self.render_gold_text(25, 75, self.stat_spent);
+        self.render_gold_text(25, 75, self.stats.spent);
         text("FINAL", 16, 90);
         self.render_gold_text(25, 100, self.gold);
         let stat_index = (self.frame / 120) % 4;
@@ -2896,10 +2920,10 @@ impl GameMaster {
             _ => "",
         };
         let stat_value = match stat_index {
-            0 => self.stat_drilled,
-            1 => self.stat_survived,
-            2 => self.stat_dmg,
-            3 => self.stat_powerups,
+            0 => self.stats.drilled,
+            1 => self.stats.survived,
+            2 => self.stats.dmg,
+            3 => self.stats.powerups,
             _ => 0,
         };
         self.colors_set(2);
